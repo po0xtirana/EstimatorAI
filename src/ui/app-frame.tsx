@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const navItems = [{ label: "Overview", href: "/" }, { label: "Tender feed", href: "/tenders" }, { label: "Estimates", href: "/estimates" }, { label: "Operating model", href: "/trade-profiles" }, { label: "Company team", href: "/team" }, { label: "Cost profile", href: "/cost-profile" }, { label: "Reports", href: "/reports" }];
+const navItems = [{ label: "Overview", href: "/" }, { label: "Tender feed", href: "/tenders" }, { label: "Estimates", href: "/estimates" }, { label: "Operating model", href: "/trade-profiles" }, { label: "Company team", href: "/team" }, { label: "Reports", href: "/reports" }];
 
 export default function AppFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();

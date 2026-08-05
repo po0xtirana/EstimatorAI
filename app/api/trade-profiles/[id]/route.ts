@@ -18,7 +18,21 @@ export async function GET(request: Request) {
       admin.from("trade_profile_assemblies").select("*").eq("trade_profile_id", id).eq("organization_id", ctx.organizationId).order("name")
     ]);
     if (profile.error || !profile.data) return NextResponse.json({ error: "Trade profile not found" }, { status: 404 });
-    return NextResponse.json({ profile: profile.data, resources: resources.data ?? [], crews: crews.data ?? [], assemblies: assemblies.data ?? [] });
+    return NextResponse.json({
+      profile: profile.data,
+      resources: (resources.data ?? []).map((resource: any) => ({
+        resourceKind: resource.resource_kind,
+        resourceKey: resource.resource_key,
+        name: resource.name,
+        unit: resource.unit,
+        rateCents: Number(resource.rate_cents ?? 0),
+        rateBasis: resource.rate_basis,
+        availableQuantity: resource.available_quantity === null || resource.available_quantity === undefined ? null : Number(resource.available_quantity),
+        wastePercent: Number(resource.waste_percent ?? 0)
+      })),
+      crews: crews.data ?? [],
+      assemblies: assemblies.data ?? []
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load trade profile" }, { status: 401 });
   }

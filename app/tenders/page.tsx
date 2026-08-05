@@ -100,7 +100,7 @@ export default function TendersPage() {
                 <span>Value: {formatCents(t.estimated_value_cents)}</span>
                 <span>Status: {orgTender.status}</span>
               </div>
-              {t.source_url && <a href={t.source_url} target="_blank" rel="noopener noreferrer">View source →</a>}
+              <div className="tender-actions"><a href={`/tenders/${t.id}`}>Build estimate →</a>{t.source_url && <a href={t.source_url} target="_blank" rel="noopener noreferrer">View source →</a>}</div>
             </article>
           );
         })}

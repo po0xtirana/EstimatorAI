@@ -1,0 +1,12 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type Estimate = { id: string; status: string; recommended_price_cents: number; confidence_score: number | null; bid_score: number | null; schedule_days: number | null; trade_profiles?: { name: string }; tenders?: { title_en: string | null } };
+const money = (cents: number | null) => cents === null ? "—" : new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
+
+export default function EstimatesPage() {
+  const [estimates, setEstimates] = useState<Estimate[]>([]); const [message, setMessage] = useState<string | null>(null);
+  useEffect(() => { fetch("/api/estimates").then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error); setEstimates(data.estimates ?? []); }).catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load estimates")); }, []);
+  return <main className="empty-page"><p className="eyebrow accent">Estimate workspace</p><h1>Draft prices with evidence.</h1><p className="empty-page-copy">Each estimate combines tender scope, your trade operating model, resource demand, risk, and a review queue. Project hours come from production templates.</p>{message && <p className="auth-message auth-error">{message}</p>}{!estimates.length ? <div className="empty-panel"><div className="empty-icon">$</div><h2>No estimate runs yet</h2><p>Open a tender, add or extract its scope, select a trade profile, and generate the first automated estimate.</p><a href="/tenders">Open tender feed →</a></div> : <div className="estimate-list">{estimates.map((estimate) => <a className="estimate-card" href={`/estimates/${estimate.id}`} key={estimate.id}><div><p className="eyebrow accent">{estimate.trade_profiles?.name ?? "Trade profile"}</p><h2>{estimate.tenders?.title_en ?? "Tender estimate"}</h2><span className="status-pill">{estimate.status}</span></div><div className="estimate-card-metrics"><span><small>Recommended price</small><strong>{money(estimate.recommended_price_cents)}</strong></span><span><small>Confidence</small><strong>{estimate.confidence_score === null ? "—" : `${Math.round(estimate.confidence_score)}%`}</strong></span><span><small>Bid score</small><strong>{estimate.bid_score === null ? "—" : `${Math.round(estimate.bid_score)}%`}</strong></span><span><small>Schedule</small><strong>{estimate.schedule_days === null ? "—" : `${estimate.schedule_days} d`}</strong></span></div></a>)}</div>}</main>;
+}

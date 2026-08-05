@@ -1,0 +1,3 @@
+export default function ContractDetailPage() {
+  return <main className="empty-page"><p className="eyebrow accent">Contract detail</p><h1>Editable contract workspace</h1><p className="empty-page-copy">This view will combine assumptions, cost breakdown, staffing, match reasoning, and monthly cashflow for one contract.</p><div className="detail-grid"><div className="empty-panel"><h2>Estimate assumptions</h2><p>Not configured</p></div><div className="empty-panel"><h2>Go / no-go reasoning</h2><p>Not configured</p></div><div className="empty-panel"><h2>Monthly cashflow</h2><p>Not configured</p></div></div></main>;
+}

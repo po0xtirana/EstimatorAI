@@ -1,0 +1,9 @@
+const sections = [
+  { title: "Staff roles", detail: "Hourly cost by role", items: ["Estimator", "Site supervisor", "Skilled installer", "General laborer"] },
+  { title: "Materials", detail: "Unit cost by material", items: ["Drywall board", "Interior paint", "Window unit", "Flooring"] },
+  { title: "Overhead", detail: "Project allocation lines", items: ["Fuel", "Equipment", "Insurance", "Disposal"] }
+];
+
+export default function CostProfilePage() {
+  return <main className="profile-page"><div className="profile-header"><div><p className="eyebrow accent">Company cost profile</p><h1>Make every cost editable.</h1><p className="profile-copy">Your rates stay versioned and private to your organization. Suggested baselines are clearly marked and never become estimate facts until you accept them.</p></div><button className="button" type="button">Save new version <span>→</span></button></div><div className="profile-notice"><span className="notice-dot" /> No active cost profile yet. Add your company inputs to unlock estimates.</div><div className="profile-grid">{sections.map((section) => <section className="profile-card" key={section.title}><div className="profile-card-heading"><div><h2>{section.title}</h2><p className="muted">{section.detail}</p></div><button className="text-button" type="button">＋ Add</button></div>{section.items.map((item) => <div className="input-row" key={item}><div><span>{item}</span><small>Not configured</small></div><div className="input-placeholder">$ —</div></div>)}</section>)}</div><section className="profile-card markup-card"><div><h2>Target markup</h2><p className="muted">Applied to direct cost in the deterministic estimate engine.</p></div><div className="markup-value">— <span>%</span></div></section><p className="profile-footnote">Project-specific overrides will create a separate editable layer without changing this company profile.</p></main>;
+}

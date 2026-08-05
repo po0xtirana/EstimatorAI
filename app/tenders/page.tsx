@@ -1,0 +1,3 @@
+export default function TendersPage() {
+  return <main className="empty-page"><p className="eyebrow accent">Tender feed</p><h1>CanadaBuys opportunities</h1><p className="empty-page-copy">The scheduled feed is ready. Once your database is connected, new and updated tenders will appear here with bilingual titles, closing dates, source links, and explainable match scores.</p><div className="empty-panel"><div className="empty-icon">⌁</div><h2>No tenders loaded yet</h2><p>Run the automated CanadaBuys worker after applying the database migrations.</p><code>npm run ingest:canadabuys</code></div></main>;
+}

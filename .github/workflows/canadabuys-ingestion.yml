@@ -1,0 +1,22 @@
+name: CanadaBuys ingestion
+
+on:
+  schedule:
+    - cron: "15 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run ingest:canadabuys
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          CANADABUYS_TENDER_CSV_URL: ${{ secrets.CANADABUYS_TENDER_CSV_URL }}

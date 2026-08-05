@@ -192,6 +192,10 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .auth-message strong, .auth-message span { display: block; }
 .auth-message span { margin-top: 4px; }
 .auth-error { border-color: #f0caca; background: #fff3f3; color: #9a4b4b; }
+.auth-preview-link { display: block; margin-top: 18px; color: #167f76; font-size: 12px; font-weight: 700; text-align: center; text-decoration: underline; }
+.preview-banner { display: flex; align-items: center; gap: 10px; margin: 18px 28px 0; padding: 10px 14px; border: 1px solid #f2d6aa; border-radius: 8px; background: #fff8ec; color: #8a6230; font-size: 12px; }
+.preview-banner span { color: #a27a48; }
+.preview-banner a { margin-left: auto; color: #7b5527; font-weight: 700; text-decoration: underline; }
 
 @media (max-width: 900px) {
   .sidebar { width: 210px; }

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { PREVIEW_COOKIE, isLocalHost } from "../preview";
 
 export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -19,8 +20,9 @@ export async function updateSession(request: NextRequest) {
   });
   const { data } = await supabase.auth.getClaims();
   const path = request.nextUrl.pathname;
-  const publicPath = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/_next");
-  if (!data?.claims && !publicPath) {
+  const publicPath = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/preview") || path.startsWith("/_next");
+  const localPreview = isLocalHost(request.nextUrl.hostname) && request.cookies.get(PREVIEW_COOKIE)?.value === "1";
+  if (!data?.claims && !publicPath && !localPreview) {
     const redirect = request.nextUrl.clone();
     redirect.pathname = "/login";
     redirect.searchParams.set("next", path);

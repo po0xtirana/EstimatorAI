@@ -8,8 +8,10 @@ export default function LoginPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [localPreview, setLocalPreview] = useState(false);
 
   useEffect(() => {
+    setLocalPreview(window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1");
     const error = new URLSearchParams(window.location.search).get("error");
     const messages: Record<string, string> = {
       invalid_link: "That sign-in link is incomplete. Request a fresh link below.",
@@ -57,6 +59,7 @@ export default function LoginPage() {
         </form>
         {message && <div className="auth-message auth-success" role="status"><strong>{message}</strong><span>Check your inbox and spam folder. The link is single-use and expires.</span></div>}
         {errorMessage && <p className="auth-message auth-error" role="alert">{errorMessage}</p>}
+        {localPreview && <a className="auth-preview-link" href="/preview">Preview the interface without email</a>}
       </div>
     </main>
   );

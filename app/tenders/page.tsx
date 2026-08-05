@@ -18,6 +18,7 @@ type OrgTender = {
   match_score: number | null;
   status: string;
   tenders: Tender;
+  team_fit_score: number | null;
 };
 
 function formatCents(cents: number | null): string {
@@ -85,11 +86,12 @@ export default function TendersPage() {
           const t = orgTender.tenders;
           const title = t.title_en ?? t.title_fr ?? "Untitled tender";
           const score = orgTender.match_score;
+          const teamFit = orgTender.team_fit_score;
           return (
             <article className="tender-card" key={t.id}>
               <div className="tender-head">
                 <h2>{title}</h2>
-                {score !== null && <span className="match-badge">Match {Math.round(score)}%</span>}
+                <div className="tender-badges">{score !== null && <span className="match-badge">Match {Math.round(score)}%</span>}{teamFit !== null && <span className="match-badge team-fit-badge">Team fit {Math.round(teamFit)}%</span>}</div>
               </div>
               {t.title_en && t.title_fr && <p className="muted">FR: {t.title_fr}</p>}
               <div className="tender-meta">

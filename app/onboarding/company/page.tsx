@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Trade = { slug: string; name_en: string; name_fr: string | null };
-type Staff = { roleKey: string; roleNameEn: string; skillSummary: string; availableHeadcount: number; hourlyCostCents: number };
+type Staff = { displayName?: string; roleKey: string; roleNameEn: string; skillSummary: string; availableHeadcount: number; hourlyCostCents: number };
 const initialStaff: Staff[] = [{ roleKey: "supervisor", roleNameEn: "Site supervisor", skillSummary: "", availableHeadcount: 1, hourlyCostCents: 5200 }, { roleKey: "installer", roleNameEn: "Skilled installer", skillSummary: "", availableHeadcount: 0, hourlyCostCents: 4200 }];
 
 export default function CompanyOnboardingPage() {

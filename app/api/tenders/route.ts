@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOrganizationContext } from "../../../src/auth/org-context";
 import { createAdminClient } from "../../../src/lib/supabase/admin";
+import { scoreTeamFit } from "../../../src/capability/classifier";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,14 @@ export async function GET() {
       }));
     }
 
-    return NextResponse.json({ tenders });
+    const { data: staff } = await admin.from("organization_staff").select("role_title, skill_summary, classified_skills").eq("organization_id", ctx.organizationId);
+    const enriched = tenders.map((row: any) => {
+      const tender = Array.isArray(row.tenders) ? row.tenders[0] : row.tenders;
+      const text = tender ? [tender.title_en, tender.title_fr, tender.description_en, tender.description_fr, tender.buyer_name].filter(Boolean).join(" ") : "";
+      const fit = scoreTeamFit(text, (staff ?? []).map((member: any) => ({ roleTitle: member.role_title, skillSummary: member.skill_summary ?? "", classifiedSkills: member.classified_skills ?? [] })));
+      return { ...row, team_fit_score: fit.score, team_fit_matches: fit.matchedMembers };
+    });
+    return NextResponse.json({ tenders: enriched });
   } catch (error) {
     console.error("Tenders API error:", error);
     return NextResponse.json(

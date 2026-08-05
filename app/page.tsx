@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const navItems = [{ label: "Overview", href: "/" }, { label: "Tender feed", href: "/tenders" }, { label: "Cost profile", href: "/cost-profile" }, { label: "Reports", href: "/reports" }];
+const navItems = [{ label: "Overview", href: "/" }, { label: "Tender feed", href: "/tenders" }, { label: "Company team", href: "/team" }, { label: "Cost profile", href: "/cost-profile" }, { label: "Reports", href: "/reports" }];
 type Contract = { id: string; name: string; status: string };
 const pluralize = (count: number, singular: string) => `${count} ${count === 1 ? singular : `${singular}s`}`;
 

@@ -1,3 +1,108 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
+type Tender = {
+  id: string;
+  title_en: string | null;
+  title_fr: string | null;
+  buyer_name: string | null;
+  closing_at: string | null;
+  estimated_value_cents: number | null;
+  procurement_category: string;
+  source_url: string | null;
+};
+
+type OrgTender = {
+  tender_id: string;
+  match_score: number | null;
+  status: string;
+  tenders: Tender;
+};
+
+function formatCents(cents: number | null): string {
+  if (cents === null) return "—";
+  return new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
+}
+
+function formatDate(date: string | null): string {
+  if (!date) return "—";
+  return new Date(date).toLocaleDateString("en-CA", { year: "numeric", month: "short", day: "numeric" });
+}
+
 export default function TendersPage() {
-  return <main className="empty-page"><p className="eyebrow accent">Tender feed</p><h1>CanadaBuys opportunities</h1><p className="empty-page-copy">The scheduled feed is ready. Once your database is connected, new and updated tenders will appear here with bilingual titles, closing dates, source links, and explainable match scores.</p><div className="empty-panel"><div className="empty-icon">⌁</div><h2>No tenders loaded yet</h2><p>Run the automated CanadaBuys worker after applying the database migrations.</p><code>npm run ingest:canadabuys</code></div></main>;
+  const [tenders, setTenders] = useState<OrgTender[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/tenders");
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Failed to load");
+        setTenders(data.tenders ?? []);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load tenders");
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, []);
+
+  if (loading) {
+    return <main className="empty-page"><p className="eyebrow accent">Tender feed</p><h1>CanadaBuys opportunities</h1><p>Loading tenders…</p></main>;
+  }
+
+  if (error) {
+    return <main className="empty-page"><p className="eyebrow accent">Tender feed</p><h1>CanadaBuys opportunities</h1><p className="error-text">{error}</p><p>Sign in to your workspace to see matching tenders.</p></main>;
+  }
+
+  if (!tenders.length) {
+    return (
+      <main className="empty-page">
+        <p className="eyebrow accent">Tender feed</p>
+        <h1>CanadaBuys opportunities</h1>
+        <p className="empty-page-copy">The scheduled feed is ready. Once your database is connected, new and updated tenders will appear here with bilingual titles, closing dates, source links, and explainable match scores.</p>
+        <div className="empty-panel">
+          <div className="empty-icon">⌁</div>
+          <h2>No tenders loaded yet</h2>
+          <p>Run the automated CanadaBuys worker after applying the database migrations.</p>
+          <code>npm run ingest:canadabuys</code>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="empty-page">
+      <p className="eyebrow accent">Tender feed</p>
+      <h1>CanadaBuys opportunities</h1>
+      <p className="empty-page-copy">{tenders.length} construction opportunities loaded.</p>
+      <div className="tender-list">
+        {tenders.map((orgTender) => {
+          const t = orgTender.tenders;
+          const title = t.title_en ?? t.title_fr ?? "Untitled tender";
+          const score = orgTender.match_score;
+          return (
+            <article className="tender-card" key={t.id}>
+              <div className="tender-head">
+                <h2>{title}</h2>
+                {score !== null && <span className="match-badge">Match {Math.round(score)}%</span>}
+              </div>
+              {t.title_en && t.title_fr && <p className="muted">FR: {t.title_fr}</p>}
+              <div className="tender-meta">
+                <span>Buyer: {t.buyer_name ?? "—"}</span>
+                <span>Closes: {formatDate(t.closing_at)}</span>
+                <span>Value: {formatCents(t.estimated_value_cents)}</span>
+                <span>Status: {orgTender.status}</span>
+              </div>
+              {t.source_url && <a href={t.source_url} target="_blank" rel="noopener noreferrer">View source →</a>}
+            </article>
+          );
+        })}
+      </div>
+    </main>
+  );
 }

@@ -99,8 +99,10 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .profile-card-heading { display: flex; justify-content: space-between; align-items: start; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
 .profile-card h2 { margin: 0 0 4px; color: var(--navy); font-size: 17px; }
 .text-button { padding: 0; border: 0; background: none; color: var(--teal); font-size: 11px; font-weight: 700; }
-.input-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #edf1f4; color: #4c5e6d; font-size: 12px; }
-.input-row:last-child { border-bottom: 0; padding-bottom: 2px; }
+  .input-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0; border-bottom: 1px solid #edf1f4; color: #4c5e6d; font-size: 12px; }
+  .clickable-row { width: 100%; border-top: 0; border-right: 0; border-left: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; transition: background .15s ease, padding .15s ease; }
+  .clickable-row:hover, .clickable-row:focus-visible { padding-left: 8px; padding-right: 8px; background: #f4faf8; outline: none; }
+  .input-row:last-child { border-bottom: 0; padding-bottom: 2px; }
 .input-row small { display: block; margin-top: 4px; color: #9aa7b3; font-size: 10px; }
 .input-placeholder { min-width: 65px; padding: 8px; border: 1px solid var(--line); border-radius: 6px; color: #a0adb8; text-align: right; }
 .input-value { color: var(--navy); font-weight: 700; }
@@ -166,7 +168,9 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .form-field { display: block; color: #526674; font-size: 11px; font-weight: 700; }
 .form-field span { display: block; margin-bottom: 7px; }
 .form-field input, .staff-editor input { width: 100%; min-width: 0; padding: 11px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); font-size: 13px; outline: none; }
-.form-field input:focus, .staff-editor input:focus { border-color: #8bc9be; box-shadow: 0 0 0 3px #e6f5f0; }
+  .form-field input:focus, .staff-editor input:focus { border-color: #8bc9be; box-shadow: 0 0 0 3px #e6f5f0; }
+  .profile-editor { margin-top: 14px; }
+  .editor-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; margin-top: 4px; }
 .form-field small { display: block; margin-top: 5px; color: #9aa7b3; font-size: 10px; font-weight: 400; }
 .trade-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 20px 0 4px; }
 .trade-option { display: flex; align-items: center; gap: 8px; padding: 11px; border: 1px solid var(--line); border-radius: 6px; color: #506373; font-size: 12px; cursor: pointer; }

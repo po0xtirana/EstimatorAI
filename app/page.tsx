@@ -1,28 +1,18 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 const navItems = [{ label: "Overview", href: "/" }, { label: "Tender feed", href: "/tenders" }, { label: "Cost profile", href: "/cost-profile" }, { label: "Reports", href: "/reports" }];
+type Contract = { id: string; name: string; status: string };
+const pluralize = (count: number, singular: string) => `${count} ${count === 1 ? singular : `${singular}s`}`;
 
 export default function HomePage() {
-  return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">B</span><span>BidPilot</span></div>
-        <p className="eyebrow">Workspace</p>
-        <nav aria-label="Primary navigation">
-          {navItems.map((item, index) => <a className={index === 0 ? "nav-item active" : "nav-item"} href={item.href} key={item.label}>{item.label}</a>)}
-        </nav>
-        <div className="sidebar-footer"><p className="muted">CanadaBuys workspace</p><p className="muted">Phase 0 foundation</p></div>
-      </aside>
-      <section className="content">
-        <header className="topbar"><div><p className="eyebrow">Tuesday, August 3, 2026</p><h1>Good morning</h1></div><div className="org-chip">Demo organization <span>⌄</span></div></header>
-        <div className="notice"><span className="notice-dot" /> Your workspace is ready. Tender ingestion will appear here once Phase 1 is approved.</div>
-        <section className="hero"><div><p className="eyebrow accent">Estimator workspace</p><h2>Price the work you can win.</h2><p className="hero-copy">BidPilot brings public tenders, company costs, and transparent estimating into one calm workspace.</p><button className="button" type="button">Set up cost profile <span>→</span></button></div><div className="hero-art" aria-hidden="true"><div className="art-card card-back" /><div className="art-card card-front"><span className="art-line wide" /><span className="art-line" /><span className="art-line short" /><div className="art-total">$ —</div></div></div></section>
-        <section className="section-heading"><div><p className="eyebrow">At a glance</p><h3>Your bid pipeline</h3></div><span className="muted">No live tenders yet</span></section>
-        <div className="metrics"><Metric label="Open tenders" value="—" detail="Awaiting CanadaBuys connection" /><Metric label="Potential matches" value="—" detail="Capability profile not configured" /><Metric label="Active estimates" value="0" detail="Ready when you are" /></div>
-        <section className="empty-state"><div className="empty-icon">＋</div><h3>Make your first estimate auditable</h3><p>Add staff roles, crew compositions, material costs, and overheads. Every value stays editable and traceable to your company profile.</p><a href="#">Open cost profile <span>→</span></a></section>
-      </section>
-    </main>
-  );
+  const [tenderCount, setTenderCount] = useState<number | null>(null);
+  const [contracts, setContracts] = useState<Contract[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { Promise.all([fetch("/api/tenders"), fetch("/api/contracts")]).then(async ([tendersResponse, contractsResponse]) => { const tenders = await tendersResponse.json(); const contractData = await contractsResponse.json(); if (!tendersResponse.ok || !contractsResponse.ok) throw new Error(tenders.error ?? contractData.error ?? "Unable to load workspace"); setTenderCount((tenders.tenders ?? []).length); setContracts(contractData.contracts ?? []); }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Unable to load workspace")); }, []);
+  const activeContracts = contracts.filter((contract) => contract.status === "bid" || contract.status === "active");
+  return <main className="shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">B</span><span>BidPilot</span></div><p className="eyebrow">Workspace</p><nav aria-label="Primary navigation">{navItems.map((item, index) => <a className={index === 0 ? "nav-item active" : "nav-item"} href={item.href} key={item.label}>{item.label}</a>)}</nav><div className="sidebar-footer"><p className="muted">CanadaBuys workspace</p><p className="muted">Phase 0 foundation</p></div></aside><section className="content"><header className="topbar"><div><p className="eyebrow">Estimator workspace</p><h1>Good morning</h1></div><div className="org-chip">Demo organization</div></header><div className="notice"><span className="notice-dot" /> {error ?? (tenderCount === null ? "Loading your workspace..." : "Your workspace is connected and ready.")}</div><section className="hero"><div><p className="eyebrow accent">Estimator workspace</p><h2>Price the work you can win.</h2><p className="hero-copy">BidPilot brings public tenders, company costs, and transparent estimating into one calm workspace.</p><a className="button" href="/cost-profile">Set up cost profile <span>-&gt;</span></a></div><div className="hero-art" aria-hidden="true"><div className="art-card card-back" /><div className="art-card card-front"><span className="art-line wide" /><span className="art-line" /><span className="art-line short" /><div className="art-total">$ -</div></div></div></section><section className="section-heading"><div><p className="eyebrow">At a glance</p><h3>Your bid pipeline</h3></div><span className="muted">{tenderCount === null ? "Loading..." : `${tenderCount} tenders loaded`}</span></section><div className="metrics"><Metric label="Open tenders" value={tenderCount === null ? "-" : String(tenderCount)} detail={tenderCount ? "Available in the tender feed" : "Run the CanadaBuys ingestion worker"} /><Metric label="Potential matches" value="-" detail="Capability profile not configured" /><Metric label="Active estimates" value={String(activeContracts.length)} detail={pluralize(activeContracts.length, "contract")} /></div><section className="empty-state"><div className="empty-icon">+</div><h3>{activeContracts.length ? "Keep your estimates auditable" : "Make your first estimate auditable"}</h3><p>{activeContracts.length ? `${pluralize(activeContracts.length, "active contract")} are in your pipeline. Review each estimate to keep assumptions, staffing, and cashflow traceable.` : "Add staff roles, crew compositions, material costs, and overheads. Every value stays editable and traceable to your company profile."}</p><a href={activeContracts.length ? "/reports" : "/cost-profile"}>{activeContracts.length ? "Open portfolio reports" : "Open cost profile"} <span>-&gt;</span></a></section></section></main>;
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <article className="metric"><p className="muted">{label}</p><strong>{value}</strong><p className="metric-detail">{detail}</p></article>;
-}
+function Metric({ label, value, detail }: { label: string; value: string; detail: string }) { return <article className="metric"><p className="muted">{label}</p><strong>{value}</strong><p className="metric-detail">{detail}</p></article>; }

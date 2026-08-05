@@ -5,15 +5,23 @@ import { createAdminClient } from "../../../src/lib/supabase/admin";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const type = url.searchParams.get("type") as EmailOtpType | null;
-  const next = url.searchParams.get("next") ?? "/";
+  const requestedNext = url.searchParams.get("next") ?? "/";
+  const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/";
   const redirectUrl = new URL(next, url.origin);
-  if (!tokenHash || !type) return NextResponse.redirect(new URL("/login?error=invalid_link", url.origin));
+  if (!code && (!tokenHash || !type)) return NextResponse.redirect(new URL("/login?error=invalid_link", url.origin));
   const supabase = await createClient();
   if (!supabase) return NextResponse.redirect(new URL("/login?error=auth_not_configured", url.origin));
-  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
-  if (error) return NextResponse.redirect(new URL("/login?error=expired_link", url.origin));
+  const { error } = code
+    ? await supabase.auth.exchangeCodeForSession(code)
+    : await supabase.auth.verifyOtp({ type: type as EmailOtpType, token_hash: tokenHash as string });
+  if (error) {
+    const errorUrl = new URL("/login", url.origin);
+    errorUrl.searchParams.set("error", error.message.toLowerCase().includes("expired") ? "expired_link" : "auth_callback_failed");
+    return NextResponse.redirect(errorUrl);
+  }
   const { data: claims } = await supabase.auth.getClaims();
   const subject = claims?.claims?.sub;
   const admin = createAdminClient();

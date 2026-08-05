@@ -189,6 +189,9 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .auth-card input:focus { border-color: #8bc9be; box-shadow: 0 0 0 3px #e6f5f0; }
 .auth-button { width: 100%; justify-content: space-between; }
 .auth-message { margin: 16px 0 0; padding: 11px; border: 1px solid #cce7d9; border-radius: 6px; background: #eefaf3; color: #3f6656; font-size: 12px; line-height: 1.4; }
+.auth-message strong, .auth-message span { display: block; }
+.auth-message span { margin-top: 4px; }
+.auth-error { border-color: #f0caca; background: #fff3f3; color: #9a4b4b; }
 
 @media (max-width: 900px) {
   .sidebar { width: 210px; }

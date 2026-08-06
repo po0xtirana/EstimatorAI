@@ -1,12 +1,13 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
 type Tender = { id: string; title_en: string | null; description_en: string | null; buyer_name: string | null; estimated_value_cents: number | null; closing_at: string | null; source_url: string | null };
 type Profile = { id: string; name: string; trade_slug: string };
 type Scope = { id: string; task_key: string | null; description: string; quantity: number | null; unit: string | null; confidence: number | null; review_status: string };
 type Document = { id: string; file_name: string; document_type: string; processing_status: string; source_url: string | null; metadata?: { revision?: number; needsOcr?: boolean } };
+type Analysis = { status: string; viable?: boolean; match?: { score: number; detectedTrades: string[]; matchedTrades: string[]; explanation: string; reasons: string[] }; profile?: { id: string; name: string; tradeSlug: string }; discovery?: { candidates: number; discovered: number; registered: number; extracted: number }; scopeCount?: number; estimate?: { id: string; recommended_price_cents: number; status: string }; reason?: string };
 
 const money = (cents: number | null) => cents === null ? "-" : new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 
@@ -29,6 +30,9 @@ export default function TenderDetailPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const analysisStartedFor = useRef<string | null>(null);
 
   async function load() {
     const [tenderResponse, profileResponse, scopeResponse, documentResponse] = await Promise.all([fetch(`/api/tenders/${id}`), fetch("/api/trade-profiles"), fetch(`/api/tenders/${id}/scope`), fetch(`/api/tenders/${id}/documents`)]);
@@ -45,6 +49,25 @@ export default function TenderDetailPage() {
   }
 
   useEffect(() => { if (id) load().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load tender")); }, [id]);
+
+  async function analyzeTender() {
+    setAnalysisBusy(true);
+    try {
+      const response = await fetch(`/api/tenders/${id}/analyze`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "Tender analysis failed");
+      setAnalysis(data);
+      if (data.profile?.id) setProfileId(data.profile.id);
+      await load();
+      setMessage(data.status === "estimate_created" ? "Tender matched and a draft estimate was created automatically." : data.reason ?? "Tender analysis completed.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Tender analysis failed");
+    } finally {
+      setAnalysisBusy(false);
+    }
+  }
+
+  useEffect(() => { if (id && analysisStartedFor.current !== id) { analysisStartedFor.current = id; analyzeTender(); } }, [id]);
 
   async function addScope(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,6 +122,7 @@ export default function TenderDetailPage() {
   return <main className="empty-page">
     <div className="profile-header"><div><p className="eyebrow accent">Tender workspace</p><h1>{tender.title_en ?? "Untitled opportunity"}</h1><p className="empty-page-copy">{tender.buyer_name ?? "Buyer not listed"} - Closes {tender.closing_at ? new Date(tender.closing_at).toLocaleDateString("en-CA") : "not listed"} - Estimated value {money(tender.estimated_value_cents)}</p></div>{tender.source_url && <a className="button secondary-button" href={tender.source_url} target="_blank" rel="noopener noreferrer">Open source -&gt;</a>}</div>
     {message && <p className="auth-message" role="status">{message}</p>}
+    <section className="profile-card"><div className="profile-card-heading"><div><p className="eyebrow accent">Automatic decision support</p><h2>Does this tender fit the company?</h2><p className="muted">EstimatorAI reads the notice, checks configured trades, people, geography, bonding, and capacity, then prepares a draft only when the fit is viable.</p></div><button className="button secondary-button" type="button" onClick={analyzeTender} disabled={analysisBusy}>{analysisBusy ? "Analyzing..." : "Run analysis again"}</button></div>{analysisBusy && <p className="muted">Checking the tender source and looking for public PDF attachments...</p>}{analysis && <><div className="input-row"><div><span>{analysis.status.replaceAll("_", " ")}</span><small>{analysis.match?.explanation ?? analysis.reason}</small></div><strong>{analysis.match ? `${analysis.match.score}/100` : "-"}</strong></div>{analysis.match?.detectedTrades.length ? <p className="muted">Tender classified as: {analysis.match.detectedTrades.join(", ")}. Company match: {analysis.match.matchedTrades.length ? analysis.match.matchedTrades.join(", ") : "none configured"}.</p> : null}{analysis.profile && <p className="muted">Operating model selected: <strong>{analysis.profile.name}</strong> ({analysis.profile.tradeSlug}). {analysis.scopeCount ?? 0} scope item(s) available.</p>}{analysis.discovery && <p className="muted">Document discovery: {analysis.discovery.discovered} public attachment(s) found, {analysis.discovery.registered} registered, {analysis.discovery.extracted} with measurable quantities.</p>}{analysis.estimate && <p><a className="text-button" href={`/estimates/${analysis.estimate.id}`}>Open automatically generated draft -&gt;</a> <span className="muted">{money(analysis.estimate.recommended_price_cents)}</span></p>}{analysis.reason && !analysis.estimate && <p className="error-text">{analysis.reason}</p>}</>}</section>
     <section className="profile-card"><div className="profile-card-heading"><div><h2>Choose the operating model</h2><p className="muted">Trade selection controls crews, productivity, materials, and cost assumptions.</p></div></div><select value={profileId} onChange={(event) => setProfileId(event.target.value)}>{profiles.map((profile) => <option value={profile.id} key={profile.id}>{profile.name}</option>)}</select>{!profiles.length && <p className="error-text">Create a trade profile before generating an estimate.</p>}</section>
     <div className="detail-grid">
       <section className="profile-card"><div className="profile-card-heading"><div><h2>Tender package</h2><p className="muted">Upload text files or PDFs. Text PDFs are extracted automatically; scanned PDFs are flagged for OCR/manual review.</p></div></div>{documents.map((document) => <div className="input-row" key={document.id}><div><span>{document.file_name}</span><small>{document.document_type} - {document.processing_status}{document.metadata?.revision ? ` - revision ${document.metadata.revision}` : ""}{document.metadata?.needsOcr ? " - OCR/manual review required" : ""}</small></div></div>)}<form className="stack-form" onSubmit={addDocument}><input type="file" accept=".pdf,.txt,.md,.csv,.json,application/pdf,text/plain,text/csv,application/json" onChange={loadTextFile} /><input value={documentName} onChange={(event) => setDocumentName(event.target.value)} placeholder="Document name, e.g. Scope.pdf" required /><select value={documentType} onChange={(event) => setDocumentType(event.target.value)}><option value="specification">Specification</option><option value="drawing">Drawing</option><option value="bill_of_quantities">Bill of quantities</option><option value="addendum">Addendum</option><option value="schedule">Schedule</option></select><textarea value={documentText} onChange={(event) => { setDocumentText(event.target.value); setSelectedFile(null); }} placeholder="Paste extracted text or notes from the document for evidence capture" rows={4} /><button className="text-button" type="submit" disabled={busy}>Register document -&gt;</button></form></section>

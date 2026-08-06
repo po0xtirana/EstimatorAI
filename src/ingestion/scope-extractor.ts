@@ -1,4 +1,4 @@
-export type ExtractedScope = { taskKey: string | null; description: string; quantity: number; unit: string; confidence: number; evidenceText: string };
+export type ExtractedScope = { taskKey: string | null; description: string; quantity: number; unit: string; confidence: number; evidenceText: string; sourcePage?: number };
 
 const TASK_TERMS: Array<{ taskKey: string; terms: string[] }> = [
   { taskKey: "paint-walls", terms: ["paint", "painting", "repaint"] },
@@ -13,7 +13,7 @@ function taskFor(text: string): string | null {
   return TASK_TERMS.find((candidate) => candidate.terms.some((term) => normalized.includes(term)))?.taskKey ?? null;
 }
 
-export function extractScopeFromText(text: string): ExtractedScope[] {
+export function extractScopeFromText(text: string, sourcePage?: number): ExtractedScope[] {
   const results: ExtractedScope[] = [];
   const pattern = /([0-9][0-9,]*(?:\.[0-9]+)?)\s*(m2|m²|sqm|sq\.?\s*ft|sf|ft2|linear\s*m|lm|ea|each|units?)/gi;
   let match: RegExpExecArray | null;
@@ -30,7 +30,7 @@ export function extractScopeFromText(text: string): ExtractedScope[] {
     const evidenceText = text.slice(start, end).replace(/\s+/g, " ").trim();
     const taskKey = taskFor(evidenceText);
     const unit = match[2].toLowerCase().replace("m²", "m2").replace(/sq\.?\s*ft|sf|ft2/, "sq ft").replace(/linear\s*m|lm/, "lm").replace(/each|units?/, "ea");
-    results.push({ taskKey, description: taskKey ? `Extracted ${taskKey.replaceAll("-", " ")}` : "Extracted tender quantity", quantity, unit, confidence: taskKey ? 72 : 45, evidenceText });
+    results.push({ taskKey, description: taskKey ? `Extracted ${taskKey.replaceAll("-", " ")}` : "Extracted tender quantity", quantity, unit, confidence: taskKey ? 72 : 45, evidenceText, ...(sourcePage ? { sourcePage } : {}) });
   }
   return results;
 }

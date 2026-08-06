@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
 import { requireOrganizationContext } from "../../../../../src/auth/org-context";
+import { extractPdf, sha256 } from "../../../../../src/ingestion/document-processing";
 import { extractScopeFromText } from "../../../../../src/ingestion/scope-extractor";
 import { createAdminClient } from "../../../../../src/lib/supabase/admin";
 
@@ -8,17 +8,6 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 function tenderId(request: Request) { return new URL(request.url).pathname.split("/").filter(Boolean).at(-2); }
-
-async function extractPdf(buffer: Buffer) {
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const result = await parser.getText({ parsePageInfo: true });
-    return { text: result.text.trim(), pageCount: result.total };
-  } finally {
-    await parser.destroy();
-  }
-}
 
 function stringValue(value: FormDataEntryValue | null) { return typeof value === "string" ? value : ""; }
 
@@ -53,6 +42,7 @@ export async function POST(request: Request) {
     let tradeProfileId: string | null = null;
     let extractedText = "";
     let pageCount: number | null = null;
+    let extractedPages: Array<{ page: number; text: string }> = [];
     let rawBytes: Buffer | null = null;
     let extractionMethod = "manual_text";
     let needsOcr = false;
@@ -74,6 +64,7 @@ export async function POST(request: Request) {
           const parsed = await extractPdf(rawBytes);
           extractedText = parsed.text;
           pageCount = parsed.pageCount;
+          extractedPages = parsed.pages;
           extractionMethod = "pdf_text";
           needsOcr = !extractedText;
         } else {
@@ -98,7 +89,7 @@ export async function POST(request: Request) {
 
     if (!fileName || !documentType) return NextResponse.json({ error: "File name and document type are required" }, { status: 400 });
     const hashInput = rawBytes ?? Buffer.from(extractedText, "utf8");
-    const fileHash = createHash("sha256").update(hashInput).digest("hex");
+    const fileHash = sha256(hashInput);
     const { data: priorDocuments } = await admin.from("tender_documents").select("id, file_hash, version_label, created_at, metadata").eq("organization_id", ctx.organizationId).eq("tender_id", id).eq("file_name", fileName).order("created_at", { ascending: false });
     const duplicate = (priorDocuments ?? []).find((document) => document.file_hash === fileHash);
     if (duplicate) return NextResponse.json({ document: duplicate, duplicate: true, message: "This document version was already registered." });
@@ -109,8 +100,10 @@ export async function POST(request: Request) {
     const { data, error } = await admin.from("tender_documents").insert({ organization_id: ctx.organizationId, tender_id: id, file_name: fileName, document_type: documentType, version_label: versionLabel, source_url: sourceUrl, storage_path: storagePath, file_hash: fileHash, processing_status: processingStatus, extracted_text: extractedText || null, page_count: pageCount, metadata: documentMetadata }).select("*").single();
     if (error) return NextResponse.json({ error: "Failed to save tender document" }, { status: 500 });
     if (data && extractedText.trim()) {
-      const extractedScope = extractScopeFromText(extractedText);
-      if (extractedScope.length) await admin.from("tender_scope_items").insert(extractedScope.map((item) => ({ organization_id: ctx.organizationId, tender_id: id, tender_document_id: data.id, trade_profile_id: tradeProfileId, task_key: item.taskKey, description: item.description, quantity: item.quantity, unit: item.unit, evidence_text: item.evidenceText, confidence: item.confidence, review_status: "needs_review" })));
+      const extractedScope = extractedPages.length
+        ? extractedPages.flatMap((page) => extractScopeFromText(page.text, page.page))
+        : extractScopeFromText(extractedText);
+      if (extractedScope.length) await admin.from("tender_scope_items").insert(extractedScope.map((item) => ({ organization_id: ctx.organizationId, tender_id: id, tender_document_id: data.id, trade_profile_id: tradeProfileId, task_key: item.taskKey, description: item.description, quantity: item.quantity, unit: item.unit, source_page: item.sourcePage ?? null, evidence_text: item.evidenceText, confidence: item.confidence, review_status: "needs_review" })));
     }
     return NextResponse.json({ document: data, needsOcr, revision }, { status: 201 });
   } catch (error) {

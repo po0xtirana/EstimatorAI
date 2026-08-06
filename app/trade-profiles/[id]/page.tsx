@@ -6,10 +6,11 @@ import { useParams } from "next/navigation";
 type Resource = { resourceKind: string; resourceKey: string; name: string; unit: string; rateCents: number; rateBasis: string; availableQuantity: number | null; wastePercent: number };
 type Role = { role_resource_key: string; headcount: number; skill_slugs: string[] };
 type Crew = { id: string; crew_key: string; name: string; production_factor: number; max_crews_available: number | null; trade_profile_crew_roles: Role[] };
-type Assembly = { task_key: string; name: string; unit: string; labor_hours_per_unit: number; preferred_crew_id: string | null; material_components: Array<{ resourceKey: string; quantityPerUnit: number }>; equipment_components: Array<{ resourceKey: string; quantityPerUnit: number }> };
+type Assembly = { id: string; task_key: string; name: string; unit: string; labor_hours_per_unit: number; preferred_crew_id: string | null; material_components: Array<{ resourceKey: string; quantityPerUnit: number }>; equipment_components: Array<{ resourceKey: string; quantityPerUnit: number }> };
 type Profile = { id: string; name: string; trade_slug: string; target_markup_percent: number; contingency_percent: number; mobilization_cents: number; service_radius_km: number | null; current_pipeline_load_percent: number | null };
 type Staff = { id: string; display_name: string; role_title: string; classified_skills: string[]; hourly_cost_cents: number; available: boolean };
-type LearningSuggestion = { taskKey: string; name: string; unit: string; sampleCount: number; currentLaborHoursPerUnit: number | null; suggestedLaborHoursPerUnit: number | null; actualHourlyCostCents: number | null; actualCostCents: number; reviewRequired: boolean };
+type LearningSuggestion = { taskKey: string; assemblyId: string | null; name: string; unit: string; sampleCount: number; currentLaborHoursPerUnit: number | null; suggestedLaborHoursPerUnit: number | null; actualHourlyCostCents: number | null; actualCostCents: number; reviewRequired: boolean };
+type LearningVersion = { id: string; version_number: number; source: string; change_reason: string; created_at: string };
 
 const money = (cents: number) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 
@@ -22,8 +23,10 @@ export default function TradeProfileDetailPage() {
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [learning, setLearning] = useState<LearningSuggestion[]>([]);
+  const [versions, setVersions] = useState<LearningVersion[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [applyingTaskKey, setApplyingTaskKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -39,6 +42,7 @@ export default function TradeProfileDetailPage() {
         setAssemblies(data.assemblies ?? []);
         setStaff(staffResponse.ok ? staffData.staff ?? [] : []);
         setLearning(learningResponse.ok ? learningData.suggestions ?? [] : []);
+        setVersions(learningResponse.ok ? learningData.versions ?? [] : []);
       })
       .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load trade profile"));
   }, [id]);
@@ -92,6 +96,20 @@ export default function TradeProfileDetailPage() {
     setSaving(false);
   }
 
+  async function applyLearning(suggestion: LearningSuggestion) {
+    if (!suggestion.assemblyId || suggestion.suggestedLaborHoursPerUnit === null) return;
+    setApplyingTaskKey(suggestion.taskKey);
+    setMessage(null);
+    const response = await fetch(`/api/trade-profiles/${id}/learning`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskKey: suggestion.taskKey, assemblyId: suggestion.assemblyId, suggestedLaborHoursPerUnit: suggestion.suggestedLaborHoursPerUnit, sampleCount: suggestion.sampleCount, actualHourlyCostCents: suggestion.actualHourlyCostCents }) });
+    const data = await response.json();
+    if (response.ok) {
+      setAssemblies((current) => current.map((assembly) => assembly.id === suggestion.assemblyId ? { ...assembly, labor_hours_per_unit: suggestion.suggestedLaborHoursPerUnit as number } : assembly));
+      setMessage(`Applied the reviewed ${suggestion.taskKey} productivity suggestion as assumption version ${data.version.version_number}.`);
+      setLearning((current) => current.filter((item) => item.taskKey !== suggestion.taskKey));
+    } else setMessage(data.error ?? "Unable to apply learning suggestion");
+    setApplyingTaskKey(null);
+  }
+
   if (!profile) return <main className="empty-page"><p className="eyebrow accent">Operating model</p><h1>Loading trade profile</h1><p>{message ?? "Loading your company assumptions..."}</p></main>;
 
   return <main className="profile-page">
@@ -111,7 +129,7 @@ export default function TradeProfileDetailPage() {
 
       <section className="profile-card"><div className="profile-card-heading"><div><h2>Production templates</h2><p className="muted">Labor hours are generated from tender quantities. The estimator does not ask for project hours.</p></div></div>{assemblies.map((assembly, index) => <div className="assembly-editor" key={assembly.task_key}><div><strong>{assembly.name}</strong><small>{assembly.task_key} - per {assembly.unit}</small></div><label><span>Labor hours / unit</span><input type="number" step="0.001" value={assembly.labor_hours_per_unit} onChange={(event) => updateAssembly(index, event.target.value)} /></label></div>)}</section>
 
-      <section className="profile-card"><div className="profile-card-heading"><div><h2>Actuals learning suggestions</h2><p className="muted">Trusted completed-job actuals are summarized here as reviewable suggestions. Applying a suggestion remains a deliberate baseline change.</p></div><span className="status-pill">{learning.length} suggestions</span></div>{learning.length ? learning.map((suggestion) => <div className="learning-row" key={suggestion.taskKey}><div><strong>{suggestion.name}</strong><small>{suggestion.taskKey} - {suggestion.sampleCount} actual result{suggestion.sampleCount === 1 ? "" : "s"}</small></div><span>{suggestion.suggestedLaborHoursPerUnit === null ? "Add quantity and hours" : `${suggestion.suggestedLaborHoursPerUnit} h/${suggestion.unit}`}</span><span>{suggestion.actualHourlyCostCents === null ? "-" : `${money(suggestion.actualHourlyCostCents)} / h`}</span></div>) : <p className="muted">Record actual hours and quantities against completed contracts to generate controlled recommendations.</p>}</section>
+      <section className="profile-card"><div className="profile-card-heading"><div><h2>Actuals learning suggestions</h2><p className="muted">Trusted completed-job actuals are summarized here as reviewable suggestions. Applying a suggestion creates a versioned baseline snapshot.</p></div><span className="status-pill">{learning.length} suggestions - {versions.length} versions</span></div>{learning.length ? learning.map((suggestion) => <div className="learning-row" key={suggestion.taskKey}><div><strong>{suggestion.name}</strong><small>{suggestion.taskKey} - {suggestion.sampleCount} actual result{suggestion.sampleCount === 1 ? "" : "s"}</small></div><span>{suggestion.suggestedLaborHoursPerUnit === null ? "Add quantity and hours" : `${suggestion.suggestedLaborHoursPerUnit} h/${suggestion.unit}`}</span><span>{suggestion.actualHourlyCostCents === null ? "-" : `${money(suggestion.actualHourlyCostCents)} / h`}</span><button className="text-button" type="button" disabled={applyingTaskKey !== null || suggestion.suggestedLaborHoursPerUnit === null} onClick={() => applyLearning(suggestion)}>{applyingTaskKey === suggestion.taskKey ? "Applying..." : "Apply reviewed change"}</button></div>) : <p className="muted">Record actual hours and quantities against completed contracts to generate controlled recommendations.</p>}{versions.length > 0 && <div className="learning-history">{versions.slice(0, 5).map((version) => <small key={version.id}>Version {version.version_number}: {version.change_reason} ({new Date(version.created_at).toLocaleDateString("en-CA")})</small>)}</div>}</section>
 
       <div className="onboarding-actions"><p className="muted">Save this operating model before generating an estimate. Every future project can override assumptions without changing this baseline.</p><button className="button" type="submit" disabled={saving}>{saving ? "Saving..." : "Save operating model ->"}</button></div>
     </form>

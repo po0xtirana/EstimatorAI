@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 type CashflowRow = { contract_id: string; month: string; cost_cents: number; billing_cents: number; assumptions: Record<string, unknown> };
 type StaffingRow = { contract_id: string; role_key: string; required_headcount: number; available_headcount: number | null };
 type Actual = { id: string; actual_kind: string; task_key: string | null; hours: number | null; cost_cents: number | null; quantity: number | null; unit: string | null; occurred_on: string | null; notes: string | null };
-type Contract = { id: string; name: string; status: string; tender_id: string | null; estimated_price_cents: number | null; estimated_cost_cents: number | null; duration_months: number | null; cashflow?: CashflowRow[]; staffing?: StaffingRow[] };
+type Contract = { id: string; name: string; status: string; tender_id: string | null; estimate_run_id: string | null; estimated_price_cents: number | null; estimated_cost_cents: number | null; duration_months: number | null; cashflow?: CashflowRow[]; staffing?: StaffingRow[] };
 
 const money = (cents: number | null) => cents === null ? "-" : new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 
@@ -19,6 +19,8 @@ export default function ContractDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [kind, setKind] = useState("labor");
   const [taskKey, setTaskKey] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [unit, setUnit] = useState("");
   const [hours, setHours] = useState("");
   const [cost, setCost] = useState("");
   const [notes, setNotes] = useState("");
@@ -38,10 +40,10 @@ export default function ContractDetailPage() {
   async function addActual(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSaving(true);
-    const response = await fetch(`/api/contracts/${id}/actuals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actualKind: kind, taskKey: taskKey || null, hours: hours ? Number(hours) : undefined, costCents: cost ? Math.round(Number(cost) * 100) : undefined, notes: notes || null }) });
+    const response = await fetch(`/api/contracts/${id}/actuals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actualKind: kind, estimateRunId: contract?.estimate_run_id ?? null, taskKey: taskKey || null, quantity: quantity ? Number(quantity) : undefined, unit: unit || undefined, hours: hours ? Number(hours) : undefined, costCents: cost ? Math.round(Number(cost) * 100) : undefined, notes: notes || null }) });
     const data = await response.json();
     if (!response.ok) setError(data.error);
-    else { setTaskKey(""); setHours(""); setCost(""); setNotes(""); await load(); }
+    else { setTaskKey(""); setQuantity(""); setUnit(""); setHours(""); setCost(""); setNotes(""); await load(); }
     setSaving(false);
   }
 
@@ -62,7 +64,7 @@ export default function ContractDetailPage() {
     <section className="profile-card actuals-card"><div className="profile-card-heading"><div><h2>Actual job results</h2><p className="muted">Capture what really happened so future company assumptions can improve without changing this estimate.</p></div><span className="status-pill">{actuals.length} recorded</span></div>
       <div className="actual-summary"><div><span>Actual cost</span><strong>{money(actualCostCents)}</strong></div><div><span>Actual hours</span><strong>{actualHours.toFixed(1)} h</strong></div><div><span>Cost variance</span><strong className={costVarianceCents !== null && costVarianceCents > 0 ? "variance-negative" : "variance-positive"}>{costVarianceCents === null ? "-" : `${costVarianceCents > 0 ? "+" : ""}${money(costVarianceCents)}`}</strong></div></div>
       {actuals.map((actual) => <div className="input-row" key={actual.id}><div><span>{actual.actual_kind}{actual.task_key ? ` - ${actual.task_key}` : ""}</span><small>{actual.occurred_on ?? "Date not set"}{actual.hours !== null ? ` - ${actual.hours} hours` : ""}{actual.notes ? ` - ${actual.notes}` : ""}</small></div><strong>{money(actual.cost_cents)}</strong></div>)}
-      <form className="stack-form" onSubmit={addActual}><div className="form-grid"><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="labor">Labor</option><option value="material">Material</option><option value="equipment">Equipment</option><option value="vehicle">Vehicle</option><option value="subcontractor">Subcontractor</option><option value="schedule">Schedule</option><option value="change_order">Change order</option><option value="rework">Rework</option></select><input value={taskKey} onChange={(event) => setTaskKey(event.target.value)} placeholder="Task or resource key" /></div><div className="form-grid"><input type="number" step="0.01" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="Actual hours" /><input type="number" step="0.01" value={cost} onChange={(event) => setCost(event.target.value)} placeholder="Actual cost (CAD)" /></div><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Notes, change-order context, or production conditions" /><button className="text-button" type="submit" disabled={saving}>{saving ? "Saving..." : "Record actual result ->"}</button></form>
+      <form className="stack-form" onSubmit={addActual}><div className="form-grid"><select value={kind} onChange={(event) => setKind(event.target.value)}><option value="labor">Labor</option><option value="material">Material</option><option value="equipment">Equipment</option><option value="vehicle">Vehicle</option><option value="subcontractor">Subcontractor</option><option value="schedule">Schedule</option><option value="change_order">Change order</option><option value="rework">Rework</option></select><input value={taskKey} onChange={(event) => setTaskKey(event.target.value)} placeholder="Task or resource key" /></div><div className="form-grid"><input type="number" step="0.01" value={quantity} onChange={(event) => setQuantity(event.target.value)} placeholder="Actual quantity" /><input value={unit} onChange={(event) => setUnit(event.target.value)} placeholder="Unit, e.g. m2" /></div><div className="form-grid"><input type="number" step="0.01" value={hours} onChange={(event) => setHours(event.target.value)} placeholder="Actual hours" /><input type="number" step="0.01" value={cost} onChange={(event) => setCost(event.target.value)} placeholder="Actual cost (CAD)" /></div><input value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Notes, change-order context, or production conditions" /><button className="text-button" type="submit" disabled={saving}>{saving ? "Saving..." : "Record actual result ->"}</button></form>
     </section>
   </main>;
 }

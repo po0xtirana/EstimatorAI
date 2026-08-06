@@ -36,16 +36,18 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch associated cashflow and staffing
-    const [cashflowResult, staffingResult] = await Promise.all([
+    const [cashflowResult, staffingResult, estimateResult] = await Promise.all([
       admin.from("contract_monthly_cashflow").select("*").eq("contract_id", id).order("month", { ascending: true }),
-      admin.from("contract_staffing_plan").select("*").eq("contract_id", id)
+      admin.from("contract_staffing_plan").select("*").eq("contract_id", id),
+      contract.tender_id ? admin.from("estimate_runs").select("id").eq("organization_id", ctx.organizationId).eq("tender_id", contract.tender_id).order("created_at", { ascending: false }).limit(1) : Promise.resolve({ data: [] as Array<{ id: string }> })
     ]);
 
     return NextResponse.json({
       contract: {
         ...contract,
         cashflow: cashflowResult.data ?? [],
-        staffing: staffingResult.data ?? []
+        staffing: staffingResult.data ?? [],
+        estimate_run_id: estimateResult.data?.[0]?.id ?? null
       }
     });
   } catch (error) {

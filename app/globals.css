@@ -226,6 +226,10 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .actual-summary strong { color: var(--navy); font-size: 17px; }
 .actual-summary .variance-negative { color: #b34f36; }
 .actual-summary .variance-positive { color: #236a5d; }
+.learning-row { display: grid; grid-template-columns: minmax(180px, 1fr) 150px 120px; gap: 14px; align-items: center; padding: 14px 0; border-top: 1px solid var(--line); }
+.learning-row > div { display: grid; gap: 4px; }
+.learning-row small { color: var(--muted); font-size: 11px; }
+.learning-row > span { color: var(--navy); font-size: 12px; font-weight: 700; }
 .resource-editor label, .crew-editor label, .assembly-editor label { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
 .resource-editor input, .crew-editor input, .assembly-editor input { width: 100%; padding: 9px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); }
 .tender-actions { display: flex; gap: 18px; margin-top: 16px; }
@@ -296,6 +300,7 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
   .inline-form select { width: 100%; }
   .resource-editor, .crew-editor, .assembly-editor { grid-template-columns: 1fr 1fr; }
   .resource-editor > div, .crew-editor > div, .assembly-editor > div { grid-column: 1 / -1; }
+  .actual-summary, .learning-row { grid-template-columns: 1fr; }
   .estimate-card { display: block; }
   .estimate-card-metrics { margin-top: 18px; grid-template-columns: 1fr 1fr; }
   .estimate-metric-grid { grid-template-columns: 1fr 1fr; }

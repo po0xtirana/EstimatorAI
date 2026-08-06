@@ -77,7 +77,7 @@ export type AccuracyEstimateLine = {
 
 export type AccuracyException = {
   scopeItemId?: string;
-  exceptionType: "missing_quantity" | "unsupported_task" | "unclear_scope" | "capacity_gap" | "missing_rate" | "schedule_risk" | "manual_review";
+  exceptionType: "missing_quantity" | "unsupported_task" | "unclear_scope" | "conflicting_document" | "capacity_gap" | "missing_rate" | "schedule_risk" | "compliance_risk" | "manual_review";
   severity: "info" | "warning" | "blocking";
   title: string;
   message: string;

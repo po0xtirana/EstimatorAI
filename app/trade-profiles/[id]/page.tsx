@@ -9,6 +9,7 @@ type Crew = { id: string; crew_key: string; name: string; production_factor: num
 type Assembly = { task_key: string; name: string; unit: string; labor_hours_per_unit: number; preferred_crew_id: string | null; material_components: Array<{ resourceKey: string; quantityPerUnit: number }>; equipment_components: Array<{ resourceKey: string; quantityPerUnit: number }> };
 type Profile = { id: string; name: string; trade_slug: string; target_markup_percent: number; contingency_percent: number; mobilization_cents: number; service_radius_km: number | null; current_pipeline_load_percent: number | null };
 type Staff = { id: string; display_name: string; role_title: string; classified_skills: string[]; hourly_cost_cents: number; available: boolean };
+type LearningSuggestion = { taskKey: string; name: string; unit: string; sampleCount: number; currentLaborHoursPerUnit: number | null; suggestedLaborHoursPerUnit: number | null; actualHourlyCostCents: number | null; actualCostCents: number; reviewRequired: boolean };
 
 const money = (cents: number) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 
@@ -20,21 +21,24 @@ export default function TradeProfileDetailPage() {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [assemblies, setAssemblies] = useState<Assembly[]>([]);
   const [staff, setStaff] = useState<Staff[]>([]);
+  const [learning, setLearning] = useState<LearningSuggestion[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!id) return;
-    Promise.all([fetch(`/api/trade-profiles/${id}`), fetch("/api/team")])
-      .then(async ([profileResponse, staffResponse]) => {
+    Promise.all([fetch(`/api/trade-profiles/${id}`), fetch("/api/team"), fetch(`/api/trade-profiles/${id}/learning`)] )
+      .then(async ([profileResponse, staffResponse, learningResponse]) => {
         const data = await profileResponse.json();
         const staffData = await staffResponse.json();
+        const learningData = await learningResponse.json();
         if (!profileResponse.ok) throw new Error(data.error);
         setProfile(data.profile);
         setResources(data.resources ?? []);
         setCrews(data.crews ?? []);
         setAssemblies(data.assemblies ?? []);
         setStaff(staffResponse.ok ? staffData.staff ?? [] : []);
+        setLearning(learningResponse.ok ? learningData.suggestions ?? [] : []);
       })
       .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load trade profile"));
   }, [id]);
@@ -106,6 +110,8 @@ export default function TradeProfileDetailPage() {
       <section className="profile-card"><div className="profile-card-heading"><div><h2>Crew templates</h2><p className="muted">Crew roles connect to named employees. Matching staff costs and availability are used when an estimate is generated.</p></div></div>{crews.map((crew, index) => <div className="crew-editor" key={crew.crew_key}><div><strong>{crew.name}</strong><small>{crew.trade_profile_crew_roles.map((role) => `${role.headcount} x ${role.role_resource_key}`).join(" - ")}</small><div className="crew-staff-match">{crew.trade_profile_crew_roles.map((role) => { const matches = matchingStaff(role); return <div className="staff-match-list" key={role.role_resource_key}><span className="staff-match-role">{role.role_resource_key}</span>{matches.length ? matches.slice(0, 4).map((member) => <span className={`staff-match ${member.available ? "available" : "unavailable"}`} key={member.id}>{member.display_name} - {money(member.hourly_cost_cents)} / h</span>) : <span className="staff-match-empty">No matching employee yet</span>}</div>; })}</div></div><label><span>Production factor</span><input type="number" step="0.05" value={crew.production_factor} onChange={(event) => updateCrew(index, "production_factor", event.target.value)} /></label><label><span>Max crews</span><input type="number" step="1" value={crew.max_crews_available ?? ""} onChange={(event) => updateCrew(index, "max_crews_available", event.target.value)} /></label></div>)}</section>
 
       <section className="profile-card"><div className="profile-card-heading"><div><h2>Production templates</h2><p className="muted">Labor hours are generated from tender quantities. The estimator does not ask for project hours.</p></div></div>{assemblies.map((assembly, index) => <div className="assembly-editor" key={assembly.task_key}><div><strong>{assembly.name}</strong><small>{assembly.task_key} - per {assembly.unit}</small></div><label><span>Labor hours / unit</span><input type="number" step="0.001" value={assembly.labor_hours_per_unit} onChange={(event) => updateAssembly(index, event.target.value)} /></label></div>)}</section>
+
+      <section className="profile-card"><div className="profile-card-heading"><div><h2>Actuals learning suggestions</h2><p className="muted">Trusted completed-job actuals are summarized here as reviewable suggestions. Applying a suggestion remains a deliberate baseline change.</p></div><span className="status-pill">{learning.length} suggestions</span></div>{learning.length ? learning.map((suggestion) => <div className="learning-row" key={suggestion.taskKey}><div><strong>{suggestion.name}</strong><small>{suggestion.taskKey} - {suggestion.sampleCount} actual result{suggestion.sampleCount === 1 ? "" : "s"}</small></div><span>{suggestion.suggestedLaborHoursPerUnit === null ? "Add quantity and hours" : `${suggestion.suggestedLaborHoursPerUnit} h/${suggestion.unit}`}</span><span>{suggestion.actualHourlyCostCents === null ? "-" : `${money(suggestion.actualHourlyCostCents)} / h`}</span></div>) : <p className="muted">Record actual hours and quantities against completed contracts to generate controlled recommendations.</p>}</section>
 
       <div className="onboarding-actions"><p className="muted">Save this operating model before generating an estimate. Every future project can override assumptions without changing this baseline.</p><button className="button" type="submit" disabled={saving}>{saving ? "Saving..." : "Save operating model ->"}</button></div>
     </form>

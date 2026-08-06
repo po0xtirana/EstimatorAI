@@ -3,7 +3,8 @@ export type TeamMemberSkillInput = { roleTitle: string; skillSummary: string; cl
 
 const SKILL_TAXONOMY: Record<string, { label: string; terms: string[] }> = {
   "general-renovation": { label: "General renovation", terms: ["renovation", "remodel", "refurbishment", "building improvement"] },
-  "fire-water-restoration": { label: "Fire and water restoration", terms: ["fire damage", "water damage", "restoration", "remediation"] },
+  restoration: { label: "Restoration", terms: ["restoration", "rebuild", "recovery", "contents pack-out"] },
+  "fire-water-restoration": { label: "Fire and water damage", terms: ["fire damage", "water damage", "remediation", "emergency drying"] },
   painting: { label: "Painting", terms: ["painting", "paint", "coating"] },
   drywall: { label: "Drywall and gypsum", terms: ["drywall", "gypsum", "partition", "wallboard"] },
   flooring: { label: "Flooring", terms: ["flooring", "carpet", "tile", "vinyl"] },

@@ -22,10 +22,17 @@ const templates: Record<string, TradeTemplate> = {
   },
   "fire-water-restoration": {
     tradeSlug: "fire-water-restoration",
-    name: "Restoration and fire-water damage",
+    name: "Fire and water damage",
     resources: [labor("restoration-supervisor", "Restoration supervisor", 5600), labor("restoration-technician", "Restoration technician", 3900), labor("laborer", "General laborer", 2800), material("containment-poly", "Containment poly", "m2", 250), equipment("air-mover", "Air mover", "day", 3500), equipment("dehumidifier", "Dehumidifier", "day", 6000)],
     crews: [{ crewKey: "restoration-crew", name: "Restoration response crew", productionFactor: 1, maxCrewsAvailable: 1, roles: [{ roleResourceKey: "restoration-supervisor", headcount: 1 }, { roleResourceKey: "restoration-technician", headcount: 2 }] }],
     assemblies: [{ taskKey: "water-extraction", name: "Water extraction and setup", unit: "m2", laborHoursPerUnit: 0.12, preferredCrewKey: "restoration-crew", equipmentComponents: [{ resourceKey: "air-mover", quantityPerUnit: 0.06 }, { resourceKey: "dehumidifier", quantityPerUnit: 0.02 }] }, { taskKey: "containment", name: "Containment and protection", unit: "m2", laborHoursPerUnit: 0.08, preferredCrewKey: "restoration-crew", materialComponents: [{ resourceKey: "containment-poly", quantityPerUnit: 1.1 }] }]
+  },
+  restoration: {
+    tradeSlug: "restoration",
+    name: "Restoration",
+    resources: [labor("restoration-supervisor", "Restoration supervisor", 5600), labor("restoration-technician", "Restoration technician", 3900), labor("laborer", "General laborer", 2800), material("protection-material", "Protection and packing material", "m2", 325), equipment("air-scrubber", "Air scrubber", "day", 5500)],
+    crews: [{ crewKey: "restoration-crew", name: "Restoration crew", productionFactor: 1, maxCrewsAvailable: 1, roles: [{ roleResourceKey: "restoration-supervisor", headcount: 1 }, { roleResourceKey: "restoration-technician", headcount: 2 }] }],
+    assemblies: [{ taskKey: "restoration-cleaning", name: "Restoration cleaning and protection", unit: "m2", laborHoursPerUnit: 0.16, preferredCrewKey: "restoration-crew", materialComponents: [{ resourceKey: "protection-material", quantityPerUnit: 0.4 }], equipmentComponents: [{ resourceKey: "air-scrubber", quantityPerUnit: 0.01 }] }, { taskKey: "contents-packout", name: "Contents pack-out and handling", unit: "ea", laborHoursPerUnit: 0.45, preferredCrewKey: "restoration-crew" }]
   },
   painting: {
     tradeSlug: "painting",

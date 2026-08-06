@@ -5,7 +5,9 @@ const TASK_TERMS: Array<{ taskKey: string; terms: string[] }> = [
   { taskKey: "drywall-install", terms: ["drywall", "gypsum", "wallboard"] },
   { taskKey: "shingle-roof", terms: ["shingle", "roofing", "roof replacement"] },
   { taskKey: "water-extraction", terms: ["water extraction", "water damage", "drying"] },
-  { taskKey: "containment", terms: ["containment", "poly barrier", "protection"] }
+  { taskKey: "containment", terms: ["containment", "poly barrier", "protection"] },
+  { taskKey: "restoration-cleaning", terms: ["restoration cleaning", "clean and restore", "restoration work"] },
+  { taskKey: "contents-packout", terms: ["contents pack-out", "contents packout", "pack out"] }
 ];
 
 function taskFor(text: string): string | null {

@@ -127,11 +127,28 @@ function findResource(resources: AccuracyResource[], kind: AccuracyResource["res
   return resources.find((resource) => resource.resourceKind === kind && resource.resourceKey === key);
 }
 
+function crewCost(profile: AccuracyTradeProfile, crew: AccuracyCrew): number {
+  const roles = crew.roles.map((role) => ({ role, resource: findResource(profile.resources, "labor", role.roleResourceKey) })).filter((item): item is { role: { roleResourceKey: string; headcount: number; skillSlugs?: string[] }; resource: AccuracyResource } => Boolean(item.resource));
+  return roles.reduce((sum, item) => sum + item.resource.rateCents * item.role.headcount, 0) / Math.max(0.1, crew.productionFactor);
+}
+
+function feasibleCrews(profile: AccuracyTradeProfile): AccuracyCrew[] {
+  return profile.crews.filter((crew) => {
+    if (crew.maxCrewsAvailable !== null && crew.maxCrewsAvailable !== undefined && crew.maxCrewsAvailable <= 0) return false;
+    return crew.roles.length > 0 && crew.roles.every((role) => {
+      const resource = findResource(profile.resources, "labor", role.roleResourceKey);
+      return Boolean(resource) && (resource?.availableQuantity === null || resource?.availableQuantity === undefined || resource.availableQuantity >= role.headcount);
+    });
+  }).sort((a, b) => crewCost(profile, a) - crewCost(profile, b));
+}
+
 function pushDemand(demand: Map<string, AccuracyResourceDemand>, resource: AccuracyResource, quantity: number, notes?: string) {
   const key = `${resource.resourceKind}:${resource.resourceKey}`;
   const existing = demand.get(key);
   const required = (existing?.requiredQuantity ?? 0) + quantity;
-  const available = resource.availableQuantity ?? null;
+  // Labor availability is a headcount constraint, while demand is measured in
+  // hours. Crew feasibility handles the headcount check separately.
+  const available = resource.resourceKind === "labor" ? null : resource.availableQuantity ?? null;
   demand.set(key, {
     resourceKind: resource.resourceKind,
     resourceKey: resource.resourceKey,
@@ -154,6 +171,7 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
   let laborHours = 0;
   let confidenceTotal = 0;
   let confidenceCount = 0;
+  const feasible = feasibleCrews(profile);
 
   for (const scope of scopeItems) {
     const confidence = scope.confidence ?? 55;
@@ -169,12 +187,15 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
       continue;
     }
 
-    const crew = profile.crews.find((candidate) => candidate.crewKey === assembly.preferredCrewKey) ?? profile.crews[0];
+    const crew = feasible.find((candidate) => candidate.crewKey === assembly.preferredCrewKey) ?? feasible[0] ?? profile.crews.find((candidate) => candidate.crewKey === assembly.preferredCrewKey) ?? profile.crews[0];
     const roleCosts = (crew?.roles ?? []).map((role) => ({ role, resource: findResource(profile.resources, "labor", role.roleResourceKey) })).filter((item): item is { role: { roleResourceKey: string; headcount: number; skillSlugs?: string[] }; resource: AccuracyResource } => Boolean(item.resource));
     const totalHeadcount = roleCosts.reduce((sum, item) => sum + item.role.headcount, 0);
     const weightedHourlyCost = totalHeadcount ? roleCosts.reduce((sum, item) => sum + item.resource.rateCents * item.role.headcount, 0) / totalHeadcount : 0;
-    const itemHours = scope.quantity * assembly.laborHoursPerUnit;
+    const itemHours = scope.quantity * assembly.laborHoursPerUnit / Math.max(0.1, crew?.productionFactor ?? 1);
     laborHours += itemHours;
+    if (!feasible.some((candidate) => candidate.crewKey === crew?.crewKey)) {
+      exceptions.push({ scopeItemId: scope.id, exceptionType: "capacity_gap", severity: "blocking", title: "No feasible crew available", message: `The ${assembly.name} template requires roles or headcount that are not currently available.` });
+    }
     if (!roleCosts.length) {
       exceptions.push({ scopeItemId: scope.id, exceptionType: "missing_rate", severity: "blocking", title: "Labor rate required", message: `The ${assembly.name} crew has no configured labor rates.` });
     } else {
@@ -212,6 +233,11 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
     }
   }
 
+  for (const item of Array.from(demand.values())) {
+    if (item.gapQuantity !== null && item.gapQuantity > 0) {
+      exceptions.push({ exceptionType: "capacity_gap", severity: "warning", title: `${item.resourceKey} availability gap`, message: `The estimate requires ${item.requiredQuantity} ${item.unit}, but only ${item.availableQuantity} is configured as available.` });
+    }
+  }
   const overheadResources = profile.resources.filter((resource) => resource.resourceKind === "overhead");
   const overheadSubtotalCents = overheadResources.reduce((sum, resource) => {
     const amount = resource.rateBasis === "lump_sum" || resource.rateBasis === "unit" ? resource.rateCents : money(laborHours * resource.rateCents);
@@ -227,7 +253,7 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
   const markupCents = money(costBeforeMarkup * nonNegative(profile.targetMarkupPercent) / 100);
   lines.push({ id: "markup", kind: "markup", label: "Target markup", quantity: nonNegative(profile.targetMarkupPercent), unit: "%", unitCostCents: costBeforeMarkup, amountCents: markupCents, formula: `$${(costBeforeMarkup / 100).toFixed(2)} × ${nonNegative(profile.targetMarkupPercent).toFixed(2)}%`, confidence: 90, sourceType: "company_assumption" });
 
-  const dailyCapacity = profile.crews[0] ? (profile.crews[0].roles.reduce((sum, role) => sum + role.headcount, 0) * profile.shiftHours * profile.crews[0].productionFactor) : 0;
+  const dailyCapacity = feasible.length ? Math.max(...feasible.map((crew) => crew.roles.reduce((sum, role) => sum + role.headcount, 0) * profile.shiftHours * crew.productionFactor)) : 0;
   const scheduleDays = dailyCapacity > 0 ? round(laborHours / dailyCapacity) : null;
   if (scheduleDays === null && laborHours > 0) exceptions.push({ exceptionType: "schedule_risk", severity: "blocking", title: "Crew capacity required", message: "Add a crew template with roles and headcount to calculate schedule duration." });
   const capacityGap = profile.currentPipelineLoadPercent !== null && profile.currentPipelineLoadPercent !== undefined && profile.currentPipelineLoadPercent >= 80;

@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "ingest:canadabuys": "tsx scripts/ingest-canadabuys.ts"
+    "test": "tsx scripts/run-tests.ts",
+    "verify:migrations": "tsx scripts/verify-migrations.ts",
+    "ingest:canadabuys": "tsx scripts/ingest-canadabuys.ts",
+    "process:tender-jobs": "tsx scripts/process-tender-jobs.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.4",

@@ -26,7 +26,8 @@ export type MatchResult = {
 
 const TRADE_TERMS: Record<string, string[]> = {
   "general-renovation": ["renovation", "refurbishment", "building improvement"],
-  "fire-water-restoration": ["fire damage", "water damage", "restoration", "remediation"],
+  restoration: ["restoration", "rebuild", "recovery", "contents pack-out"],
+  "fire-water-restoration": ["fire damage", "water damage", "remediation", "emergency drying"],
   painting: ["painting", "paint", "coating"],
   "window-replacement": ["window", "glazing", "fenestration"],
   drywall: ["drywall", "gypsum", "partition", "wallboard"],

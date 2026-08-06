@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient } from "../../../../src/lib/supabase/server";
 import { createAdminClient } from "../../../../src/lib/supabase/admin";
 import { classifySkills } from "../../../../src/capability/classifier";
+import { SUPPORTED_PILOT_TRADE_SLUGS } from "../../../../src/estimation/supported-trades";
+import { cookies, headers } from "next/headers";
+import { PREVIEW_COOKIE, isLocalHost } from "../../../../src/lib/preview";
 
 export const dynamic = "force-dynamic";
 
@@ -9,6 +12,9 @@ type StaffInput = { displayName?: string; roleKey: string; roleNameEn: string; s
 type CompanyInput = { companyName: string; industry?: string; website?: string; phone?: string; tradeSlugs: string[]; regions: string[]; certifications: string[]; bondingCapacityCents: number | null; availableCrewSize: number | null; pipelineLoadPercent: number | null; targetMarkupPercent: number; staff: StaffInput[] };
 
 async function subjectFromSession() {
+  const requestHeaders = await headers();
+  const host = (requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "").split(":")[0];
+  if (isLocalHost(host) && (await cookies()).get(PREVIEW_COOKIE)?.value === "1") return "local-preview";
   const supabase = await createClient();
   if (!supabase) throw new Error("AUTH_PROVIDER_NOT_CONFIGURED: set Supabase public environment variables");
   const { data, error } = await supabase.auth.getClaims();
@@ -21,8 +27,8 @@ export async function GET() {
     const subject = await subjectFromSession();
     const admin = createAdminClient();
     if (!admin) return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });
-    const { data: membership } = await admin.from("organization_members").select("organization_id").eq("auth_subject", subject).limit(1).maybeSingle();
-    const { data: catalog, error: catalogError } = await admin.from("trade_catalog").select("slug, name_en, name_fr").eq("active", true).order("name_en");
+    const { data: membership } = subject === "local-preview" ? { data: { organization_id: "00000000-0000-0000-0000-000000000000" } } : await admin.from("organization_members").select("organization_id").eq("auth_subject", subject).limit(1).maybeSingle();
+    const { data: catalog, error: catalogError } = await admin.from("trade_catalog").select("slug, name_en, name_fr").eq("active", true).in("slug", [...SUPPORTED_PILOT_TRADE_SLUGS]).order("name_en");
     if (catalogError) return NextResponse.json({ error: "Failed to load trade catalog" }, { status: 500 });
     if (!membership) return NextResponse.json({ company: null, catalog: catalog ?? [] });
     const organizationId = membership.organization_id;
@@ -51,7 +57,7 @@ export async function POST(request: Request) {
     if (input.staff.some((staff) => !staff.roleKey?.trim() || !staff.roleNameEn?.trim() || staff.hourlyCostCents < 0 || staff.availableHeadcount < 0)) return NextResponse.json({ error: "Check each team role, headcount, and hourly cost" }, { status: 400 });
     const admin = createAdminClient();
     if (!admin) return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });
-    const { data: existing } = await admin.from("organization_members").select("organization_id, role").eq("auth_subject", subject).limit(1).maybeSingle();
+    const { data: existing } = subject === "local-preview" ? { data: { organization_id: "00000000-0000-0000-0000-000000000000", role: "owner" } } : await admin.from("organization_members").select("organization_id, role").eq("auth_subject", subject).limit(1).maybeSingle();
     if (existing && existing.role !== "owner" && existing.role !== "admin") return NextResponse.json({ error: "Only an organization owner or admin can update company setup" }, { status: 403 });
     let organizationId = existing?.organization_id as string | undefined;
     if (!organizationId) {
@@ -64,7 +70,8 @@ export async function POST(request: Request) {
       const updated = await admin.from("organizations").update({ name: input.companyName.trim(), industry: input.industry?.trim() || null, website: input.website?.trim() || null, phone: input.phone?.trim() || null }).eq("id", organizationId);
       if (updated.error) return NextResponse.json({ error: "Failed to update company" }, { status: 500 });
     }
-    const trades = await admin.from("trade_catalog").select("id, slug").in("slug", input.tradeSlugs ?? []);
+    const selectedPilotTrades = (input.tradeSlugs ?? []).filter((slug) => (SUPPORTED_PILOT_TRADE_SLUGS as readonly string[]).includes(slug));
+    const trades = await admin.from("trade_catalog").select("id, slug").in("slug", selectedPilotTrades);
     await admin.from("organization_trades").delete().eq("organization_id", organizationId);
     if ((trades.data ?? []).length) await admin.from("organization_trades").insert((trades.data ?? []).map((trade: { id: string }) => ({ organization_id: organizationId, trade_id: trade.id })));
     await admin.from("organization_certifications").delete().eq("organization_id", organizationId);

@@ -56,16 +56,37 @@ export default function TenderDetailPage() {
       const response = await fetch(`/api/tenders/${id}/analyze`, { method: "POST" });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Tender analysis failed");
-      setAnalysis(data);
-      if (data.profile?.id) setProfileId(data.profile.id);
-      await load();
-      setMessage(data.status === "estimate_created" ? "Tender matched and a draft estimate was created automatically." : data.reason ?? "Tender analysis completed.");
+      setAnalysis({ status: data.status ?? "queued" });
+      setMessage("Tender analysis queued. EstimatorAI will update this page as documents and quantities are processed.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Tender analysis failed");
-    } finally {
       setAnalysisBusy(false);
+    } finally {
+      // The processing poll clears the busy state when the durable job finishes.
     }
   }
+
+  async function loadProcessing() {
+    const response = await fetch(`/api/tenders/${id}/processing`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error ?? "Unable to load processing status");
+    if (data.analysis) setAnalysis({ ...data.analysis, estimate: data.estimate ?? undefined });
+    const job = data.job;
+    if (!job || ["queued", "running", "retryable"].includes(job.status)) return false;
+    if (job.status === "failed") setMessage(job.last_error ?? "Tender processing failed. Retry the analysis after correcting the issue.");
+    else if (data.analysis?.status === "estimate_ready") setMessage("Tender matched and the draft estimate is ready for review.");
+    else if (data.analysis?.status) setMessage(`Tender analysis completed: ${data.analysis.status.replaceAll("_", " ")}.`);
+    setAnalysisBusy(false);
+    await load();
+    return true;
+  }
+
+  useEffect(() => {
+    if (!analysisBusy || !id) return;
+    const timer = window.setInterval(() => { loadProcessing().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load processing status")); }, 2000);
+    loadProcessing().catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load processing status"));
+    return () => window.clearInterval(timer);
+  }, [analysisBusy, id]);
 
   useEffect(() => { if (id && analysisStartedFor.current !== id) { analysisStartedFor.current = id; analyzeTender(); } }, [id]);
 

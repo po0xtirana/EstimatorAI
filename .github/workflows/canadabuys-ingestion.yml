@@ -22,10 +22,12 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CANADABUYS_TENDER_CSV_URL: ${{ secrets.CANADABUYS_TENDER_CSV_URL }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          if [[ -z "$DATABASE_URL" || -z "$CANADABUYS_TENDER_CSV_URL" ]]; then
+          if [[ -z "$DATABASE_URL" || -z "$NEXT_PUBLIC_SUPABASE_URL" || -z "$SUPABASE_SECRET_KEY" ]]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::CanadaBuys ingestion skipped because DATABASE_URL and/or CANADABUYS_TENDER_CSV_URL is not configured."
+            echo "::warning::CanadaBuys ingestion and tender processing skipped because DATABASE_URL, NEXT_PUBLIC_SUPABASE_URL, and SUPABASE_SECRET_KEY are required. CANADABUYS_TENDER_CSV_URL is optional and falls back to official dataset metadata."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
@@ -34,3 +36,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           CANADABUYS_TENDER_CSV_URL: ${{ secrets.CANADABUYS_TENDER_CSV_URL }}
+      - run: npm run process:tender-jobs
+        if: steps.config.outputs.configured == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

@@ -8,19 +8,106 @@ type Role = { role_resource_key: string; headcount: number; skill_slugs: string[
 type Crew = { id: string; crew_key: string; name: string; production_factor: number; max_crews_available: number | null; trade_profile_crew_roles: Role[] };
 type Assembly = { task_key: string; name: string; unit: string; labor_hours_per_unit: number; preferred_crew_id: string | null; material_components: Array<{ resourceKey: string; quantityPerUnit: number }>; equipment_components: Array<{ resourceKey: string; quantityPerUnit: number }> };
 type Profile = { id: string; name: string; trade_slug: string; target_markup_percent: number; contingency_percent: number; mobilization_cents: number; service_radius_km: number | null; current_pipeline_load_percent: number | null };
+type Staff = { id: string; display_name: string; role_title: string; classified_skills: string[]; hourly_cost_cents: number; available: boolean };
+
+const money = (cents: number) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(cents / 100);
 
 export default function TradeProfileDetailPage() {
-  const params = useParams(); const id = typeof params.id === "string" ? params.id : "";
-  const [profile, setProfile] = useState<Profile | null>(null); const [resources, setResources] = useState<Resource[]>([]); const [crews, setCrews] = useState<Crew[]>([]); const [assemblies, setAssemblies] = useState<Assembly[]>([]); const [message, setMessage] = useState<string | null>(null); const [saving, setSaving] = useState(false);
+  const params = useParams();
+  const id = typeof params.id === "string" ? params.id : "";
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [crews, setCrews] = useState<Crew[]>([]);
+  const [assemblies, setAssemblies] = useState<Assembly[]>([]);
+  const [staff, setStaff] = useState<Staff[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { if (!id) return; fetch(`/api/trade-profiles/${id}`).then(async (response) => { const data = await response.json(); if (!response.ok) throw new Error(data.error); setProfile(data.profile); setResources(data.resources ?? []); setCrews(data.crews ?? []); setAssemblies(data.assemblies ?? []); }).catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load trade profile")); }, [id]);
+  useEffect(() => {
+    if (!id) return;
+    Promise.all([fetch(`/api/trade-profiles/${id}`), fetch("/api/team")])
+      .then(async ([profileResponse, staffResponse]) => {
+        const data = await profileResponse.json();
+        const staffData = await staffResponse.json();
+        if (!profileResponse.ok) throw new Error(data.error);
+        setProfile(data.profile);
+        setResources(data.resources ?? []);
+        setCrews(data.crews ?? []);
+        setAssemblies(data.assemblies ?? []);
+        setStaff(staffResponse.ok ? staffData.staff ?? [] : []);
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load trade profile"));
+  }, [id]);
 
-  function updateResource(index: number, key: keyof Resource, value: string) { setResources((current) => current.map((resource, resourceIndex) => resourceIndex === index ? { ...resource, [key]: key === "rateCents" ? Math.round(Number(value) * 100) : key === "availableQuantity" || key === "wastePercent" ? Number(value) : value } : resource)); }
-  function updateAssembly(index: number, value: string) { setAssemblies((current) => current.map((assembly, assemblyIndex) => assemblyIndex === index ? { ...assembly, labor_hours_per_unit: Number(value) } : assembly)); }
-  function updateCrew(index: number, key: "production_factor" | "max_crews_available", value: string) { setCrews((current) => current.map((crew, crewIndex) => crewIndex === index ? { ...crew, [key]: Number(value) } : crew)); }
+  function updateResource(index: number, key: keyof Resource, value: string) {
+    setResources((current) => current.map((resource, resourceIndex) => resourceIndex === index ? {
+      ...resource,
+      [key]: key === "rateCents" ? Math.round(Number(value) * 100) : key === "availableQuantity" || key === "wastePercent" ? Number(value) : value
+    } : resource));
+  }
 
-  async function save(event: FormEvent<HTMLFormElement>) { event.preventDefault(); if (!profile) return; setSaving(true); setMessage(null); const response = await fetch(`/api/trade-profiles/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ target_markup_percent: profile.target_markup_percent, contingency_percent: profile.contingency_percent, mobilization_cents: profile.mobilization_cents, service_radius_km: profile.service_radius_km, current_pipeline_load_percent: profile.current_pipeline_load_percent, resources: resources.map((resource) => ({ resourceKind: resource.resourceKind, resourceKey: resource.resourceKey, name: resource.name, unit: resource.unit, rateCents: resource.rateCents, rateBasis: resource.rateBasis, availableQuantity: resource.availableQuantity, wastePercent: resource.wastePercent })), crews: crews.map((crew) => ({ crewKey: crew.crew_key, name: crew.name, productionFactor: crew.production_factor, maxCrewsAvailable: crew.max_crews_available, roles: crew.trade_profile_crew_roles.map((role) => ({ roleResourceKey: role.role_resource_key, headcount: role.headcount, skillSlugs: role.skill_slugs })) })), assemblies: assemblies.map((assembly) => ({ taskKey: assembly.task_key, name: assembly.name, unit: assembly.unit, laborHoursPerUnit: assembly.labor_hours_per_unit, preferredCrewKey: crews.find((crew) => crew.id === assembly.preferred_crew_id)?.crew_key ?? crews[0]?.crew_key ?? null, materialComponents: assembly.material_components, equipmentComponents: assembly.equipment_components })) }) }); const data = await response.json(); setMessage(response.ok ? "Operating model saved. New estimates will use this version of the assumptions." : data.error ?? "Unable to save profile"); setSaving(false); }
+  function updateAssembly(index: number, value: string) {
+    setAssemblies((current) => current.map((assembly, assemblyIndex) => assemblyIndex === index ? { ...assembly, labor_hours_per_unit: Number(value) } : assembly));
+  }
+
+  function updateCrew(index: number, key: "production_factor" | "max_crews_available", value: string) {
+    setCrews((current) => current.map((crew, crewIndex) => crewIndex === index ? { ...crew, [key]: Number(value) } : crew));
+  }
+
+  function matchingStaff(role: Role) {
+    const key = role.role_resource_key.toLowerCase();
+    const tokens = key.split(/[-_ ]+/).filter((token) => token.length > 2);
+    return staff.filter((member) => {
+      const title = member.role_title.toLowerCase();
+      const skills = member.classified_skills.map((skill) => skill.toLowerCase());
+      return title.includes(key) || tokens.some((token) => title.includes(token) || skills.some((skill) => skill.includes(token) || token.includes(skill)));
+    }).sort((a, b) => Number(b.available) - Number(a.available));
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!profile) return;
+    setSaving(true);
+    setMessage(null);
+    const response = await fetch(`/api/trade-profiles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        target_markup_percent: profile.target_markup_percent,
+        contingency_percent: profile.contingency_percent,
+        mobilization_cents: profile.mobilization_cents,
+        service_radius_km: profile.service_radius_km,
+        current_pipeline_load_percent: profile.current_pipeline_load_percent,
+        resources: resources.map((resource) => ({ resourceKind: resource.resourceKind, resourceKey: resource.resourceKey, name: resource.name, unit: resource.unit, rateCents: resource.rateCents, rateBasis: resource.rateBasis, availableQuantity: resource.availableQuantity, wastePercent: resource.wastePercent })),
+        crews: crews.map((crew) => ({ crewKey: crew.crew_key, name: crew.name, productionFactor: crew.production_factor, maxCrewsAvailable: crew.max_crews_available, roles: crew.trade_profile_crew_roles.map((role) => ({ roleResourceKey: role.role_resource_key, headcount: role.headcount, skillSlugs: role.skill_slugs })) })),
+        assemblies: assemblies.map((assembly) => ({ taskKey: assembly.task_key, name: assembly.name, unit: assembly.unit, laborHoursPerUnit: assembly.labor_hours_per_unit, preferredCrewKey: crews.find((crew) => crew.id === assembly.preferred_crew_id)?.crew_key ?? crews[0]?.crew_key ?? null, materialComponents: assembly.material_components, equipmentComponents: assembly.equipment_components }))
+      })
+    });
+    const data = await response.json();
+    setMessage(response.ok ? "Operating model saved. New estimates will use this version of the assumptions." : data.error ?? "Unable to save profile");
+    setSaving(false);
+  }
 
   if (!profile) return <main className="empty-page"><p className="eyebrow accent">Operating model</p><h1>Loading trade profile</h1><p>{message ?? "Loading your company assumptions..."}</p></main>;
-  return <main className="profile-page"><div className="profile-header"><div><p className="eyebrow accent">{profile.trade_slug} operating model</p><h1>{profile.name}</h1><p className="profile-copy">System defaults are starting points only. Replace rates and productivity with your company’s approved assumptions before generating a bid.</p></div><span className="status-pill">Draft profile</span></div>{message && <p className="auth-message" role="status">{message}</p>}<form onSubmit={save}><section className="profile-card"><div className="profile-card-heading"><div><h2>Commercial assumptions</h2><p className="muted">These values affect every estimate generated from this trade.</p></div></div><div className="form-grid capability-fields"><label className="form-field"><span>Target markup (%)</span><input type="number" step="0.1" value={profile.target_markup_percent} onChange={(event) => setProfile({ ...profile, target_markup_percent: Number(event.target.value) })} /></label><label className="form-field"><span>Contingency (%)</span><input type="number" step="0.1" value={profile.contingency_percent} onChange={(event) => setProfile({ ...profile, contingency_percent: Number(event.target.value) })} /></label><label className="form-field"><span>Mobilization (CAD)</span><input type="number" step="0.01" value={(profile.mobilization_cents / 100).toFixed(2)} onChange={(event) => setProfile({ ...profile, mobilization_cents: Math.round(Number(event.target.value) * 100) })} /></label><label className="form-field"><span>Pipeline load (%)</span><input type="number" step="1" value={profile.current_pipeline_load_percent ?? ""} onChange={(event) => setProfile({ ...profile, current_pipeline_load_percent: event.target.value ? Number(event.target.value) : null })} /></label></div></section><section className="profile-card"><div className="profile-card-heading"><div><h2>Resources and rates</h2><p className="muted">Loaded labor, materials, equipment, vehicles, subcontractors, and overhead.</p></div></div>{resources.map((resource, index) => <div className="resource-editor" key={`${resource.resourceKind}-${resource.resourceKey}`}><div><strong>{resource.name}</strong><small>{resource.resourceKind} · {resource.unit}</small></div><label><span>Rate</span><input type="number" step="0.01" value={(resource.rateCents / 100).toFixed(2)} onChange={(event) => updateResource(index, "rateCents", event.target.value)} /></label><label><span>Available</span><input type="number" step="0.1" value={resource.availableQuantity ?? ""} onChange={(event) => updateResource(index, "availableQuantity", event.target.value)} /></label><label><span>Waste %</span><input type="number" step="0.1" value={resource.wastePercent} onChange={(event) => updateResource(index, "wastePercent", event.target.value)} /></label></div>)}</section><section className="profile-card"><div className="profile-card-heading"><div><h2>Crew templates</h2><p className="muted">The engine chooses a crew and turns production rates into project hours.</p></div></div>{crews.map((crew, index) => <div className="crew-editor" key={crew.crew_key}><div><strong>{crew.name}</strong><small>{crew.trade_profile_crew_roles.map((role) => `${role.headcount} × ${role.role_resource_key}`).join(" · ")}</small></div><label><span>Production factor</span><input type="number" step="0.05" value={crew.production_factor} onChange={(event) => updateCrew(index, "production_factor", event.target.value)} /></label><label><span>Max crews</span><input type="number" step="1" value={crew.max_crews_available ?? ""} onChange={(event) => updateCrew(index, "max_crews_available", event.target.value)} /></label></div>)}</section><section className="profile-card"><div className="profile-card-heading"><div><h2>Production templates</h2><p className="muted">Labor hours are generated from tender quantities. The estimator does not ask for project hours.</p></div></div>{assemblies.map((assembly, index) => <div className="assembly-editor" key={assembly.task_key}><div><strong>{assembly.name}</strong><small>{assembly.task_key} · per {assembly.unit}</small></div><label><span>Labor hours / unit</span><input type="number" step="0.001" value={assembly.labor_hours_per_unit} onChange={(event) => updateAssembly(index, event.target.value)} /></label></div>)}</section><div className="onboarding-actions"><p className="muted">Save this operating model before generating an estimate. Every future project can override assumptions without changing this baseline.</p><button className="button" type="submit" disabled={saving}>{saving ? "Saving..." : "Save operating model →"}</button></div></form></main>;
+
+  return <main className="profile-page">
+    <div className="profile-header"><div><p className="eyebrow accent">{profile.trade_slug} operating model</p><h1>{profile.name}</h1><p className="profile-copy">System defaults are starting points only. Replace rates and productivity with your company&apos;s approved assumptions before generating a bid.</p></div><span className="status-pill">Draft profile</span></div>
+    {message && <p className="auth-message" role="status">{message}</p>}
+    <form onSubmit={save}>
+      <section className="profile-card"><div className="profile-card-heading"><div><h2>Commercial assumptions</h2><p className="muted">These values affect every estimate generated from this trade.</p></div></div><div className="form-grid capability-fields">
+        <label className="form-field"><span>Target markup (%)</span><input type="number" step="0.1" value={profile.target_markup_percent} onChange={(event) => setProfile({ ...profile, target_markup_percent: Number(event.target.value) })} /></label>
+        <label className="form-field"><span>Contingency (%)</span><input type="number" step="0.1" value={profile.contingency_percent} onChange={(event) => setProfile({ ...profile, contingency_percent: Number(event.target.value) })} /></label>
+        <label className="form-field"><span>Mobilization (CAD)</span><input type="number" step="0.01" value={(profile.mobilization_cents / 100).toFixed(2)} onChange={(event) => setProfile({ ...profile, mobilization_cents: Math.round(Number(event.target.value) * 100) })} /></label>
+        <label className="form-field"><span>Pipeline load (%)</span><input type="number" step="1" value={profile.current_pipeline_load_percent ?? ""} onChange={(event) => setProfile({ ...profile, current_pipeline_load_percent: event.target.value ? Number(event.target.value) : null })} /></label>
+      </div></section>
+
+      <section className="profile-card"><div className="profile-card-heading"><div><h2>Resources and rates</h2><p className="muted">Loaded labor, materials, equipment, vehicles, subcontractors, and overhead.</p></div></div>{resources.map((resource, index) => <div className="resource-editor" key={`${resource.resourceKind}-${resource.resourceKey}`}><div><strong>{resource.name}</strong><small>{resource.resourceKind} - {resource.unit}</small></div><label><span>Rate</span><input type="number" step="0.01" value={(resource.rateCents / 100).toFixed(2)} onChange={(event) => updateResource(index, "rateCents", event.target.value)} /></label><label><span>Available</span><input type="number" step="0.1" value={resource.availableQuantity ?? ""} onChange={(event) => updateResource(index, "availableQuantity", event.target.value)} /></label><label><span>Waste %</span><input type="number" step="0.1" value={resource.wastePercent} onChange={(event) => updateResource(index, "wastePercent", event.target.value)} /></label></div>)}</section>
+
+      <section className="profile-card"><div className="profile-card-heading"><div><h2>Crew templates</h2><p className="muted">Crew roles connect to named employees. Matching staff costs and availability are used when an estimate is generated.</p></div></div>{crews.map((crew, index) => <div className="crew-editor" key={crew.crew_key}><div><strong>{crew.name}</strong><small>{crew.trade_profile_crew_roles.map((role) => `${role.headcount} x ${role.role_resource_key}`).join(" - ")}</small><div className="crew-staff-match">{crew.trade_profile_crew_roles.map((role) => { const matches = matchingStaff(role); return <div className="staff-match-list" key={role.role_resource_key}><span className="staff-match-role">{role.role_resource_key}</span>{matches.length ? matches.slice(0, 4).map((member) => <span className={`staff-match ${member.available ? "available" : "unavailable"}`} key={member.id}>{member.display_name} - {money(member.hourly_cost_cents)} / h</span>) : <span className="staff-match-empty">No matching employee yet</span>}</div>; })}</div></div><label><span>Production factor</span><input type="number" step="0.05" value={crew.production_factor} onChange={(event) => updateCrew(index, "production_factor", event.target.value)} /></label><label><span>Max crews</span><input type="number" step="1" value={crew.max_crews_available ?? ""} onChange={(event) => updateCrew(index, "max_crews_available", event.target.value)} /></label></div>)}</section>
+
+      <section className="profile-card"><div className="profile-card-heading"><div><h2>Production templates</h2><p className="muted">Labor hours are generated from tender quantities. The estimator does not ask for project hours.</p></div></div>{assemblies.map((assembly, index) => <div className="assembly-editor" key={assembly.task_key}><div><strong>{assembly.name}</strong><small>{assembly.task_key} - per {assembly.unit}</small></div><label><span>Labor hours / unit</span><input type="number" step="0.001" value={assembly.labor_hours_per_unit} onChange={(event) => updateAssembly(index, event.target.value)} /></label></div>)}</section>
+
+      <div className="onboarding-actions"><p className="muted">Save this operating model before generating an estimate. Every future project can override assumptions without changing this baseline.</p><button className="button" type="submit" disabled={saving}>{saving ? "Saving..." : "Save operating model ->"}</button></div>
+    </form>
+  </main>;
 }

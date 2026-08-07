@@ -11,6 +11,8 @@ export type CapabilityProfile = {
 
 export type MatchResult = {
   score: number;
+  detectedTrades: string[];
+  matchedTrades: string[];
   explanation: string;
   components: {
     trade: number;
@@ -24,7 +26,8 @@ export type MatchResult = {
 
 const TRADE_TERMS: Record<string, string[]> = {
   "general-renovation": ["renovation", "refurbishment", "building improvement"],
-  "fire-water-restoration": ["fire damage", "water damage", "restoration", "remediation"],
+  restoration: ["restoration", "rebuild", "recovery", "contents pack-out"],
+  "fire-water-restoration": ["fire damage", "water damage", "remediation", "emergency drying"],
   painting: ["painting", "paint", "coating"],
   "window-replacement": ["window", "glazing", "fenestration"],
   drywall: ["drywall", "gypsum", "partition", "wallboard"],
@@ -45,6 +48,7 @@ function clamp(value: number): number { return Math.max(0, Math.min(100, value))
 
 export function matchTender(tender: NormalizedTender, profile: CapabilityProfile): MatchResult {
   const text = sourceText(tender);
+  const detectedTrades = Object.entries(TRADE_TERMS).filter(([, terms]) => terms.some((term) => text.includes(term.toLowerCase()))).map(([slug]) => slug);
   const matchedTrades = profile.tradeSlugs.filter((slug) => (TRADE_TERMS[slug] ?? [slug.replaceAll("-", " ")]).some((term) => text.includes(term.toLowerCase())));
   const trade = matchedTrades.length ? 40 : tender.procurementCategory === "construction" ? 8 : 0;
   const certification = profile.certifications.length ? 10 : 0;
@@ -59,5 +63,5 @@ export function matchTender(tender: NormalizedTender, profile: CapabilityProfile
   reasons.push(region ? "Service-region coverage is compatible or not yet constrained." : "No configured service region was found.");
   reasons.push(bonding === 15 ? "Tender value is within the configured bonding capacity." : bonding === 0 ? "Tender value exceeds the configured bonding capacity." : "Bonding capacity is not configured or tender value is unavailable.");
   reasons.push(capacity === 10 ? "Configured crew capacity has room." : capacity === 0 ? "Current pipeline load or crew capacity is constrained." : "Crew capacity is not fully configured.");
-  return { score, components: { trade, certification, region, bonding, capacity }, reasons, explanation: `${score}/100 match. ${reasons.join(" ")}` };
+  return { score, detectedTrades, matchedTrades, components: { trade, certification, region, bonding, capacity }, reasons, explanation: `${score}/100 match. ${reasons.join(" ")}` };
 }

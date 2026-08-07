@@ -1,28 +1,27 @@
-const navItems = [{ label: "Overview", href: "/" }, { label: "Tender feed", href: "/tenders" }, { label: "Cost profile", href: "/cost-profile" }, { label: "Reports", href: "/reports" }];
+"use client";
+
+import { useEffect, useState } from "react";
+
+type Readiness = { organizationName: string | null; completedCount: number; totalCount: number; blockingItems: string[]; warningItems: string[]; readyForBidding: boolean; steps: Array<{ id: string; label: string; description: string; href: string; complete: boolean; required: boolean; detail: string }> };
+type CockpitData = { readiness: Readiness; opportunities: Array<{ tender_id: string; match_score: number | null; status: string; tenders: { id: string; title_en: string | null; title_fr: string | null; buyer_name: string | null; closing_at: string | null; estimated_value_cents: number | null } | null }>; estimates: Array<{ id: string; status: string; recommended_price_cents: number; confidence_score: number | null; bid_score: number | null; trade_profiles?: { name: string } | null; tenders?: { title_en: string | null; title_fr: string | null } | null }>; processingJobs: Array<{ id: string; tender_id: string; stage: string; status: string; last_error: string | null }>; exceptions: Array<{ id: string; estimate_run_id: string; severity: string; title: string; message: string }>; activeJobs: Array<{ id: string; name: string; status: string }> };
+
+const money = (cents: number | null) => cents === null ? "—" : new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD", maximumFractionDigits: 0 }).format(cents / 100);
+const date = (value: string | null) => value ? new Date(value).toLocaleDateString("en-CA", { month: "short", day: "numeric" }) : "No close date";
 
 export default function HomePage() {
-  return (
-    <main className="shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">B</span><span>BidPilot</span></div>
-        <p className="eyebrow">Workspace</p>
-        <nav aria-label="Primary navigation">
-          {navItems.map((item, index) => <a className={index === 0 ? "nav-item active" : "nav-item"} href={item.href} key={item.label}>{item.label}</a>)}
-        </nav>
-        <div className="sidebar-footer"><p className="muted">CanadaBuys workspace</p><p className="muted">Phase 0 foundation</p></div>
-      </aside>
-      <section className="content">
-        <header className="topbar"><div><p className="eyebrow">Tuesday, August 3, 2026</p><h1>Good morning</h1></div><div className="org-chip">Demo organization <span>⌄</span></div></header>
-        <div className="notice"><span className="notice-dot" /> Your workspace is ready. Tender ingestion will appear here once Phase 1 is approved.</div>
-        <section className="hero"><div><p className="eyebrow accent">Estimator workspace</p><h2>Price the work you can win.</h2><p className="hero-copy">BidPilot brings public tenders, company costs, and transparent estimating into one calm workspace.</p><button className="button" type="button">Set up cost profile <span>→</span></button></div><div className="hero-art" aria-hidden="true"><div className="art-card card-back" /><div className="art-card card-front"><span className="art-line wide" /><span className="art-line" /><span className="art-line short" /><div className="art-total">$ —</div></div></div></section>
-        <section className="section-heading"><div><p className="eyebrow">At a glance</p><h3>Your bid pipeline</h3></div><span className="muted">No live tenders yet</span></section>
-        <div className="metrics"><Metric label="Open tenders" value="—" detail="Awaiting CanadaBuys connection" /><Metric label="Potential matches" value="—" detail="Capability profile not configured" /><Metric label="Active estimates" value="0" detail="Ready when you are" /></div>
-        <section className="empty-state"><div className="empty-icon">＋</div><h3>Make your first estimate auditable</h3><p>Add staff roles, crew compositions, material costs, and overheads. Every value stays editable and traceable to your company profile.</p><a href="#">Open cost profile <span>→</span></a></section>
-      </section>
-    </main>
-  );
+  const [data, setData] = useState<CockpitData | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { fetch("/api/cockpit").then(async (response) => { const payload = await response.json(); if (!response.ok) throw new Error(payload.error ?? "Unable to load cockpit"); setData(payload); }).catch((loadError) => setError(loadError instanceof Error ? loadError.message : "Unable to load cockpit")); }, []);
+  if (error) return <main className="empty-page"><p className="eyebrow accent">Bid cockpit</p><h1>We could not load your workspace</h1><p className="error-text">{error}</p><a className="button" href="/login">Return to sign in</a></main>;
+  if (!data) return <main className="empty-page"><p className="eyebrow accent">Bid cockpit</p><h1>Preparing your workspace</h1><p>Loading readiness, opportunities, and estimate review items...</p></main>;
+  const { readiness } = data;
+  const nextStep = readiness.steps.find((step) => !step.complete);
+  return <main className="dashboard-content"><header className="dashboard-welcome"><div><p className="eyebrow accent">Bid cockpit</p><h1>{readiness.organizationName ? `Good morning, ${readiness.organizationName}` : "Good morning"}</h1><p className="hero-copy">See what you can bid, why it fits, and what needs your review before a price is approved.</p></div><a className="button" href={nextStep?.href ?? "/tenders"}>{nextStep ? `Continue setup: ${nextStep.label} →` : "Review opportunities →"}</a></header>
+    <section className={`readiness-banner ${readiness.readyForBidding ? "ready" : "needs-work"}`}><div><p className="eyebrow">Company readiness</p><h2>{readiness.readyForBidding ? "Ready to assess opportunities" : `${readiness.blockingItems.length} setup item(s) blocking reliable bids`}</h2><p>{readiness.readyForBidding ? "Your operating model has the minimum inputs needed to prepare a draft estimate." : `Next step: ${nextStep?.label ?? "complete your operating model"}.`}</p></div><div className="readiness-progress"><strong>{readiness.completedCount}/{readiness.totalCount}</strong><span>setup areas complete</span></div></section>
+    <section className="section-heading"><div><p className="eyebrow">Your workflow</p><h2>What needs attention</h2></div></section><div className="cockpit-grid"><CockpitCard title="Opportunities" count={data.opportunities.length} detail="Tender opportunities in your workspace" href="/tenders" action="Open opportunities" /><CockpitCard title="Draft estimates" count={data.estimates.length} detail="Prices ready for review" href="/estimates" action="Review estimates" /><CockpitCard title="Processing" count={data.processingJobs.length} detail="Tender packages being analyzed" href="/tenders" action="View processing" /><CockpitCard title="Exceptions" count={data.exceptions.length} detail="Items requiring estimator judgment" href="/estimates" action="Review exceptions" /></div>
+    <div className="cockpit-columns"><section className="profile-card"><div className="section-heading"><div><p className="eyebrow">Best next opportunities</p><h2>What fits your company</h2></div><a className="text-button" href="/tenders">View all →</a></div>{data.opportunities.length ? data.opportunities.slice(0, 4).map((row) => <a className="cockpit-row" href={`/tenders/${row.tender_id}`} key={row.tender_id}><div><strong>{row.tenders?.title_en ?? row.tenders?.title_fr ?? "Untitled opportunity"}</strong><small>{row.tenders?.buyer_name ?? "Buyer not listed"} · Closes {date(row.tenders?.closing_at ?? null)}</small></div><span className="match-badge">{row.match_score === null ? "Not analyzed" : `${Math.round(row.match_score)}% fit`}</span></a>) : <p className="muted">Import tenders to see opportunities matched to your company.</p>}</section><section className="profile-card"><div className="section-heading"><div><p className="eyebrow">Setup checklist</p><h2>Build a reliable baseline</h2></div><a className="text-button" href="/onboarding/company">Open setup →</a></div>{readiness.steps.slice(0, 6).map((step) => <a className="checklist-row" href={step.href} key={step.id}><span className={step.complete ? "check complete" : "check"}>{step.complete ? "✓" : ""}</span><div><strong>{step.label}</strong><small>{step.detail}</small></div><span>→</span></a>)}</section></div>
+    {data.exceptions.length > 0 && <section className="profile-card"><div className="section-heading"><div><p className="eyebrow">Review queue</p><h2>Estimator attention required</h2></div><a className="text-button" href="/estimates">Open review queue →</a></div>{data.exceptions.slice(0, 4).map((exception) => <div className="cockpit-row" key={exception.id}><div><strong>{exception.title}</strong><small>{exception.message}</small></div><span className={`status-pill ${exception.severity === "blocking" ? "danger" : ""}`}>{exception.severity}</span></div>)}</section>}
+  </main>;
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail: string }) {
-  return <article className="metric"><p className="muted">{label}</p><strong>{value}</strong><p className="metric-detail">{detail}</p></article>;
-}
+function CockpitCard({ title, count, detail, href, action }: { title: string; count: number; detail: string; href: string; action: string }) { return <a className="cockpit-card" href={href}><p className="eyebrow">{title}</p><strong>{count}</strong><span>{detail}</span><small>{action} →</small></a>; }

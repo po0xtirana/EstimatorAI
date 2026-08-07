@@ -1,17 +1,33 @@
-# BidPilot Phase 0 Architecture
+# EstimatorAI pilot architecture
 
-## Scope
+EstimatorAI is organized around one user workflow: configure the company, qualify an opportunity, process tender evidence, prepare a draft estimate, approve it, and learn from actual job results.
 
-The first vertical slice is CanadaBuys tender ingestion for Canadian contractors working in general renovation and adjacent trades: fire/water damage restoration, painting, window replacement, drywall, flooring, insulation, doors, roofing, siding, demolition/abatement, finish carpentry, and minor electrical/plumbing coordination.
+```mermaid
+flowchart LR
+  A[Company readiness] --> B[Operating model]
+  C[CanadaBuys ingestion] --> D[Durable tender job]
+  D --> E[Classification and capability match]
+  E --> F[Public PDF discovery and page evidence]
+  F --> G[Scope quantities and exceptions]
+  G --> H[Shared deterministic estimate runner]
+  B --> H
+  H --> I[Draft estimate and bid recommendation]
+  I --> J[Estimator approval]
+  J --> K[Actual job results]
+  K --> L[Reviewed versioned suggestions]
+  L --> B
+```
 
 ## Boundaries
 
-- CanadaBuys is the only live procurement source in the initial slice.
-- SEAO remains a future source; its French-first records must fit the same bilingual model.
-- Cost calculations will be deterministic and implemented behind a testable service boundary.
-- Authentication will use a standard provider integration. Application code receives an authenticated organization context; it does not implement cryptography or password handling.
-- Every tenant-owned table carries `organization_id`; database policies are the enforcement backstop.
+- `src/company/readiness.ts` is the readiness calculation and does not decide whether a tender is viable.
+- `src/tenders/analysis-service.ts` is reusable by the browser retry endpoint and the GitHub worker. It owns tender evidence and capability analysis.
+- `src/estimation/estimate-runner.ts` is the only persistence path for generated estimates. Manual and automatic estimates therefore share the same calculation, assumption snapshot, lines, exceptions, and resource demand.
+- `src/estimation/accuracy.ts` is deterministic calculation code. It never lets an AI extraction change a company rate or approve a bid.
+- `supabase/migrations` is the only migration source. `db/migrations` is retained as historical reference.
 
-## Phase gates
+## Processing states
 
-Phase 0 establishes the shell, auth/data boundaries, schema foundation, and risk register. No tender polling or price-producing logic is included until Phase 0 is reviewed and approved.
+The tender UI starts or retries a `tender_processing_jobs` row. GitHub claims queued work and records the stage after each durable checkpoint. Recoverable errors become retryable with backoff; permanent errors remain visible to the estimator. A successful job can still produce a review outcome such as missing documents, unsupported scope, or insufficient capability.
+
+Every estimate line retains tender document/page evidence where available and links to the company assumption snapshot used for pricing. Project overrides can therefore be reviewed without rewriting the operating model or historical estimates.

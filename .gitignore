@@ -1,5 +1,9 @@
 node_modules/
 .next/
+.next-clean/
+.next-clean-verify/
+.next-clean-verify-2/
+.next-clean-stale-*/
 out/
 .env*
 !.env.example

@@ -1,3 +1,6 @@
+import { cookies, headers } from "next/headers";
+import { PREVIEW_COOKIE, isLocalHost } from "../lib/preview";
+
 /**
  * Authentication adapter boundary.
  *
@@ -14,6 +17,13 @@ export type OrganizationContext = {
 };
 
 export async function requireOrganizationContext(): Promise<OrganizationContext> {
+  const requestHeaders = await headers();
+  const host = (requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "").split(":")[0];
+  const previewCookie = (await cookies()).get(PREVIEW_COOKIE)?.value;
+  if (isLocalHost(host) && previewCookie === "1") {
+    return { organizationId: "00000000-0000-0000-0000-000000000000", authSubject: "local-preview", role: "owner" };
+  }
+
   const { createClient } = await import("../lib/supabase/server");
   const supabase = await createClient();
   if (!supabase) throw new Error("AUTH_PROVIDER_NOT_CONFIGURED: set Supabase public environment variables");

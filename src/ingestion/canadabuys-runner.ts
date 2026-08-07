@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { normalizeCanadaBuysCsvWithStats, type NormalizedTender } from "./canadabuys";
 
@@ -23,8 +24,8 @@ export async function resolveCanadaBuysCsvUrl(fetchImpl: FetchLike = fetch): Pro
   return currentCsv.url;
 }
 
-async function upsertTender(client: PoolClient, tender: NormalizedTender): Promise<void> {
-  await client.query(
+async function upsertTender(client: PoolClient, tender: NormalizedTender): Promise<string> {
+  const result = await client.query<{ id: string }>(
     `insert into tenders (
       source, source_record_id, solicitation_number, title_en, title_fr,
       description_en, description_fr, buyer_name, procurement_category,
@@ -38,7 +39,8 @@ async function upsertTender(client: PoolClient, tender: NormalizedTender): Promi
       buyer_name = excluded.buyer_name, procurement_category = excluded.procurement_category,
       procurement_code = excluded.procurement_code, estimated_value_cents = excluded.estimated_value_cents,
       currency = excluded.currency, closing_at = excluded.closing_at, source_url = excluded.source_url,
-      raw_payload = excluded.raw_payload, updated_at = now()`,
+      raw_payload = excluded.raw_payload, updated_at = now()
+    returning id`,
     [
       tender.source, tender.sourceRecordId, tender.solicitationNumber, tender.title.en, tender.title.fr,
       tender.description.en, tender.description.fr, tender.buyerName, tender.procurementCategory,
@@ -46,6 +48,23 @@ async function upsertTender(client: PoolClient, tender: NormalizedTender): Promi
       tender.sourceUrl, JSON.stringify(tender.rawPayload)
     ]
   );
+  return result.rows[0].id;
+}
+
+function sourceFingerprint(tender: NormalizedTender): string {
+  return createHash("sha256").update(JSON.stringify({ titleEn: tender.title.en, titleFr: tender.title.fr, descriptionEn: tender.description.en, descriptionFr: tender.description.fr, sourceUrl: tender.sourceUrl, rawPayload: tender.rawPayload })).digest("hex");
+}
+
+async function enqueueTenderJobs(client: PoolClient, tenderId: string, fingerprint: string): Promise<void> {
+  const organizations = await client.query<{ organization_id: string }>("select distinct organization_id from organization_members");
+  for (const organization of organizations.rows) {
+    await client.query(
+      `insert into tender_processing_jobs (organization_id, tender_id, job_type, source_fingerprint, status, stage, next_run_at)
+       values ($1, $2, 'analyze_tender', $3, 'queued', 'queued', now())
+       on conflict (organization_id, tender_id, job_type, source_fingerprint) do nothing`,
+      [organization.organization_id, tenderId, fingerprint]
+    );
+  }
 }
 
 export async function runCanadaBuysIngestion(options: {
@@ -71,7 +90,10 @@ export async function runCanadaBuysIngestion(options: {
       [datasetUrl, stats.rowsSeen, stats.records.length, stats.rowsRejected]
     );
     runId = run.rows[0].id;
-    for (const tender of stats.records) await upsertTender(client, tender);
+    for (const tender of stats.records) {
+      const tenderId = await upsertTender(client, tender);
+      await enqueueTenderJobs(client, tenderId, sourceFingerprint(tender));
+    }
     await client.query("update ingestion_runs set status = 'succeeded', completed_at = now() where id = $1", [runId]);
     await client.query("commit");
     return { datasetUrl, rowsSeen: stats.rowsSeen, rowsNormalized: stats.records.length, rowsRejected: stats.rowsRejected };

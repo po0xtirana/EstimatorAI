@@ -28,6 +28,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const ctx = await requireOrganizationContext();
+    if (!["owner", "admin", "estimator"].includes(ctx.role)) return NextResponse.json({ error: "Only an owner, admin, or estimator can review estimates" }, { status: 403 });
     const admin = createAdminClient();
     if (!admin) return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });
     const id = estimateId(request);
@@ -38,6 +39,10 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ exception: result.data });
     }
     if (!["draft", "review", "approved", "rejected", "superseded"].includes(body.status)) return NextResponse.json({ error: "A valid estimate status is required" }, { status: 400 });
+    if (body.status === "approved") {
+      const { data: blocking } = await admin.from("estimate_exceptions").select("id").eq("estimate_run_id", id).eq("organization_id", ctx.organizationId).eq("severity", "blocking").eq("resolved", false).limit(1).maybeSingle();
+      if (blocking) return NextResponse.json({ error: "Resolve all blocking exceptions before approving this estimate" }, { status: 409 });
+    }
     const result = await admin.from("estimate_runs").update({ status: body.status, updated_at: new Date().toISOString() }).eq("id", id).eq("organization_id", ctx.organizationId).select("*").single();
     if (result.error) return NextResponse.json({ error: "Failed to update estimate" }, { status: 500 });
     return NextResponse.json({ estimate: result.data });

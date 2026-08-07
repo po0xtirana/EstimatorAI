@@ -10,6 +10,7 @@ function tenderId(request: Request) { return new URL(request.url).pathname.split
 export async function POST(request: Request) {
   try {
     const ctx = await requireOrganizationContext();
+    if (!["owner", "admin", "estimator"].includes(ctx.role)) return NextResponse.json({ error: "Only an owner, admin, or estimator can run tender analysis" }, { status: 403 });
     const admin = createAdminClient();
     if (!admin) return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });
     const id = tenderId(request);

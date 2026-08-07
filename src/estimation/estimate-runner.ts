@@ -15,6 +15,24 @@ export type CreateEstimateRunOptions = {
 
 export type CreatedEstimateRun = { estimate: any; result: AccuracyEstimateResult; assumptionVersionId: string | null };
 
+function addConflictingDocumentExceptions(result: AccuracyEstimateResult, scopeRows: any[]) {
+  const groups = new Map<string, any[]>();
+  for (const row of scopeRows) {
+    const key = String(row.task_key ?? row.description ?? "").trim().toLowerCase();
+    if (!key || row.quantity === null || row.quantity === undefined) continue;
+    const group = groups.get(key) ?? [];
+    group.push(row);
+    groups.set(key, group);
+  }
+  for (const [key, rows] of Array.from(groups.entries())) {
+    const quantities = Array.from(new Set(rows.map((row) => `${row.quantity}:${row.unit ?? ""}`)));
+    const documents = Array.from(new Set(rows.map((row) => row.tender_document_id).filter(Boolean)));
+    if (quantities.length > 1 && documents.length > 1) {
+      result.exceptions.push({ exceptionType: "conflicting_document", severity: "blocking", title: "Conflicting tender quantities", message: `The tender package contains different quantities for ${key} across ${documents.length} document versions. Review the latest addendum or drawing before approving.` });
+    }
+  }
+}
+
 async function createAssumptionSnapshot(admin: any, options: { organizationId: string; profileId: string; profile: any; authSubject?: string | null }): Promise<string | null> {
   const latest = await admin.from("trade_profile_assumption_versions").select("version_number").eq("organization_id", options.organizationId).eq("trade_profile_id", options.profileId).order("version_number", { ascending: false }).limit(1).maybeSingle();
   const versionNumber = Number(latest.data?.version_number ?? 0) + 1;
@@ -28,6 +46,7 @@ export async function createEstimateRun(options: CreateEstimateRunOptions): Prom
   if (!profile) throw new Error("Trade profile not found");
   if (!options.scopeRows.length) throw new Error("Add or extract at least one scope item before generating an estimate");
   const result = generateAccuracyEstimate(profile, options.scopeRows.map(mapScopeRow));
+  addConflictingDocumentExceptions(result, options.scopeRows);
   let tender: any = null;
   if (options.tenderId) {
     const [tenderResult, capabilityResult, profileResult] = await Promise.all([

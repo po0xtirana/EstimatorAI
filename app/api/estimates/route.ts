@@ -21,12 +21,19 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const ctx = await requireOrganizationContext();
+    if (!["owner", "admin", "estimator"].includes(ctx.role)) return NextResponse.json({ error: "Only an owner, admin, or estimator can generate estimates" }, { status: 403 });
     const admin = createAdminClient();
     if (!admin) return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });
     const body = await request.json();
     const tenderId = body.tenderId ? String(body.tenderId) : null;
     const tradeProfileId = String(body.tradeProfileId ?? "");
+    const regenerate = body.regenerate === true;
     if (!tradeProfileId) return NextResponse.json({ error: "Select a trade profile before generating an estimate" }, { status: 400 });
+    if (tenderId) {
+      const { data: existing } = await admin.from("estimate_runs").select("*").eq("organization_id", ctx.organizationId).eq("tender_id", tenderId).eq("trade_profile_id", tradeProfileId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+      if (existing && !regenerate) return NextResponse.json({ estimate: existing, result: null, reused: true }, { status: 200 });
+      if (existing && regenerate) await admin.from("estimate_runs").update({ status: "superseded", updated_at: new Date().toISOString() }).eq("id", existing.id).eq("organization_id", ctx.organizationId);
+    }
     let scopeRows: any[] = [];
     if (Array.isArray(body.scopeItems) && body.scopeItems.length) {
       scopeRows = body.scopeItems.map((row: any, index: number) => ({ id: row.id ?? `manual-${index + 1}`, task_key: row.taskKey, description: row.description, quantity: row.quantity, unit: row.unit, confidence: row.confidence ?? 65, evidence_text: row.evidenceText, source_page: row.sourcePage, tender_document_id: row.tenderDocumentId }));

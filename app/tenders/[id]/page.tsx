@@ -131,7 +131,7 @@ export default function TenderDetailPage() {
 
   async function generate() {
     setBusy(true);
-    const response = await fetch("/api/estimates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenderId: id, tradeProfileId: profileId }) });
+    const response = await fetch("/api/estimates", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tenderId: id, tradeProfileId: profileId, regenerate: true }) });
     const data = await response.json();
     setBusy(false);
     if (!response.ok) { setMessage(data.error); return; }

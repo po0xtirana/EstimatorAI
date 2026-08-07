@@ -24,6 +24,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const ctx = await requireOrganizationContext();
+    if (!["owner", "admin", "estimator"].includes(ctx.role)) return NextResponse.json({ error: "Only an owner, admin, or estimator can add tender scope" }, { status: 403 });
     const admin = createAdminClient();
     if (!admin) return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });
     const tenderId = pathId(request);

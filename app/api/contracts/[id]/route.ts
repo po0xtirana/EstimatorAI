@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const ctx = await requireOrganizationContext();
+    if (!["owner", "admin", "estimator"].includes(ctx.role)) return NextResponse.json({ error: "Only an owner, admin, or estimator can update contracts" }, { status: 403 });
     const admin = createAdminClient();
     if (!admin) {
       return NextResponse.json({ error: "Supabase admin not configured" }, { status: 500 });

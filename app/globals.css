@@ -262,6 +262,7 @@ h1, h2, h3 { font-family: "Space Grotesk", "DM Sans", sans-serif; }
 .estimate-line, .exception-row { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 0; border-top: 1px solid var(--line); }
 .estimate-line > div, .exception-row > div { display: grid; gap: 4px; }
 .estimate-line small { color: var(--muted); font-size: 11px; }
+.estimate-line .evidence-text { color: #587568; font-style: italic; }
 .estimate-line > span { color: var(--navy); font-weight: 800; }
 .exception-row p { margin: 0; color: var(--muted); font-size: 12px; }
 .exception-row.blocking { border-left: 3px solid #cc6b55; padding-left: 12px; }

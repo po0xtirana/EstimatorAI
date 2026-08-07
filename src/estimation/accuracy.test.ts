@@ -24,3 +24,13 @@ if (result.exceptions.length !== 0 || result.scheduleDays !== 0.625) throw new E
 
 const missing = generateAccuracyEstimate(profile, [{ id: "scope-2", taskKey: "unknown", description: "Unknown task", quantity: null, unit: "m2" }]);
 if (missing.exceptions[0]?.exceptionType !== "missing_quantity") throw new Error("missing quantity exception failed");
+
+const crewChoice = generateAccuracyEstimate({
+  ...profile,
+  resources: [...profile.resources, { resourceKind: "labor", resourceKey: "lower-cost-painter", name: "Lower-cost painter", unit: "hour", rateCents: 2000, rateBasis: "hour", availableQuantity: 2 }],
+  crews: [
+    { crewKey: "expensive-crew", name: "Preferred but expensive", productionFactor: 1, roles: [{ roleResourceKey: "painter", headcount: 2 }] },
+    { crewKey: "lower-cost-crew", name: "Lower-cost crew", productionFactor: 1, roles: [{ roleResourceKey: "lower-cost-painter", headcount: 2 }] }
+  ]
+}, [{ id: "scope-3", taskKey: "paint-walls", description: "Paint walls", quantity: 10, unit: "m2", confidence: 90 }]);
+if (crewChoice.lines.find((line) => line.kind === "labor")?.unitCostCents !== 2000) throw new Error("least-cost feasible crew selection failed");

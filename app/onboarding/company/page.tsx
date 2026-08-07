@@ -61,6 +61,12 @@ export default function CompanyOnboardingPage() {
     }).catch((error) => setMessage(error instanceof Error ? error.message : "Unable to load company setup"));
   }, []);
 
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("step");
+    const requestedIndex = ["company", "trades", "coverage", "people", "labor", "commercial", "compliance"].indexOf(requested ?? "");
+    if (requestedIndex >= 0) setStep(requestedIndex <= 2 ? (requestedIndex === 0 ? 0 : 1) : requestedIndex <= 4 ? 2 : 3);
+  }, []);
+
   const payload = useMemo(() => ({
     companyName, industry, website, phone, tradeSlugs,
     regions: regions.split(",").map((value) => value.trim()).filter(Boolean),

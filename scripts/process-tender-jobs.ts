@@ -15,7 +15,7 @@ async function main() {
   const now = new Date().toISOString();
   const { data: jobs, error } = await admin.from("tender_processing_jobs")
     .select("*")
-    .in("job_type", ["analyze_tender", "process_documents", "generate_estimate"])
+    .eq("job_type", "analyze_tender")
     .in("status", ["queued", "retryable"])
     .or(`next_run_at.is.null,next_run_at.lte.${now}`)
     .order("created_at", { ascending: true })

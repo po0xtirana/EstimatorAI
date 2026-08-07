@@ -187,7 +187,9 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
       continue;
     }
 
-    const crew = feasible.find((candidate) => candidate.crewKey === assembly.preferredCrewKey) ?? feasible[0] ?? profile.crews.find((candidate) => candidate.crewKey === assembly.preferredCrewKey) ?? profile.crews[0];
+    // Preferred crews are a fallback hint; among feasible crews the deterministic
+    // selector uses the lowest hourly cost adjusted for production factor.
+    const crew = feasible[0] ?? profile.crews.find((candidate) => candidate.crewKey === assembly.preferredCrewKey) ?? profile.crews[0];
     const roleCosts = (crew?.roles ?? []).map((role) => ({ role, resource: findResource(profile.resources, "labor", role.roleResourceKey) })).filter((item): item is { role: { roleResourceKey: string; headcount: number; skillSlugs?: string[] }; resource: AccuracyResource } => Boolean(item.resource));
     const totalHeadcount = roleCosts.reduce((sum, item) => sum + item.role.headcount, 0);
     const weightedHourlyCost = totalHeadcount ? roleCosts.reduce((sum, item) => sum + item.resource.rateCents * item.role.headcount, 0) / totalHeadcount : 0;

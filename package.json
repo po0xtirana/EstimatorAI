@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx scripts/run-tests.ts",
     "verify:migrations": "tsx scripts/verify-migrations.ts",
+    "seed:demo": "tsx scripts/seed-demo-workspace.ts",
     "ingest:canadabuys": "tsx scripts/ingest-canadabuys.ts",
     "process:tender-jobs": "tsx scripts/process-tender-jobs.ts"
   },

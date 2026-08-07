@@ -7,6 +7,7 @@ type Tender = {
   title_en: string | null;
   title_fr: string | null;
   buyer_name: string | null;
+  published_at: string | null;
   closing_at: string | null;
   estimated_value_cents: number | null;
   procurement_category: string;
@@ -65,12 +66,11 @@ export default function TendersPage() {
       <main className="empty-page">
         <p className="eyebrow accent">Tender feed</p>
         <h1>CanadaBuys opportunities</h1>
-        <p className="empty-page-copy">The scheduled feed is ready. Once your database is connected, new and updated tenders will appear here with bilingual titles, closing dates, source links, and explainable match scores.</p>
+        <p className="empty-page-copy">The complete CanadaBuys feed refreshes automatically every day. EstimatorAI scans every tender, then shows only the opportunities that match your company capabilities.</p>
         <div className="empty-panel">
           <div className="empty-icon">⌁</div>
-          <h2>No tenders loaded yet</h2>
-          <p>Run the automated CanadaBuys worker after applying the database migrations.</p>
-          <code>npm run ingest:canadabuys</code>
+          <h2>No capability matches yet</h2>
+          <p>The daily worker ingests every CanadaBuys tender and hides opportunities that do not match your configured trades, geography, certifications, bonding, or available capacity. No tender upload is required.</p>
         </div>
       </main>
     );
@@ -80,7 +80,7 @@ export default function TendersPage() {
     <main className="empty-page">
       <p className="eyebrow accent">Tender feed</p>
       <h1>CanadaBuys opportunities</h1>
-      <p className="empty-page-copy">{tenders.length} construction opportunities loaded.</p>
+      <p className="empty-page-copy">{tenders.length} matched opportunities from the automated daily CanadaBuys feed. Newest publication dates appear first.</p>
       <div className="tender-list">
         {tenders.map((orgTender) => {
           const t = orgTender.tenders;
@@ -96,6 +96,7 @@ export default function TendersPage() {
               {t.title_en && t.title_fr && <p className="muted">FR: {t.title_fr}</p>}
               <div className="tender-meta">
                 <span>Buyer: {t.buyer_name ?? "—"}</span>
+                <span>Published: {formatDate(t.published_at)}</span>
                 <span>Closes: {formatDate(t.closing_at)}</span>
                 <span>Value: {formatCents(t.estimated_value_cents)}</span>
                 <span>Status: {orgTender.status}</span>

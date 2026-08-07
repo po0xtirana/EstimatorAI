@@ -148,6 +148,7 @@ export async function runTenderAnalysis(options: RunTenderAnalysisOptions) {
     procurementCode: tender.procurement_code,
     estimatedValueCents: tender.estimated_value_cents == null ? null : Number(tender.estimated_value_cents),
     currency: "CAD" as const,
+    publishedAt: tender.published_at,
     closingAt: tender.closing_at,
     sourceUrl: tender.source_url,
     rawPayload: asRawPayload(tender.raw_payload)

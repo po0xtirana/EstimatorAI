@@ -18,6 +18,12 @@ export async function resolveCanadaBuysCsvUrl(fetchImpl: FetchLike = fetch): Pro
   const resources = payload.result?.resources ?? [];
   const currentCsv = resources.find((resource) => {
     const text = `${resource.name ?? ""} ${resource.url ?? ""}`.toLowerCase();
+    return resource.format?.toLowerCase() === "csv" && text.includes("open tender notices");
+  }) ?? resources.find((resource) => {
+    const text = `${resource.name ?? ""} ${resource.url ?? ""}`.toLowerCase();
+    return resource.format?.toLowerCase() === "csv" && text.includes("new tender notices");
+  }) ?? resources.find((resource) => {
+    const text = `${resource.name ?? ""} ${resource.url ?? ""}`.toLowerCase();
     return resource.format?.toLowerCase() === "csv" && text.includes("tender") && !text.includes("archived");
   });
   if (!currentCsv?.url) throw new Error("No current CanadaBuys tender CSV resource was found in the official dataset metadata");
@@ -29,22 +35,22 @@ async function upsertTender(client: PoolClient, tender: NormalizedTender): Promi
     `insert into tenders (
       source, source_record_id, solicitation_number, title_en, title_fr,
       description_en, description_fr, buyer_name, procurement_category,
-      procurement_code, estimated_value_cents, currency, closing_at, source_url,
+      procurement_code, estimated_value_cents, currency, published_at, closing_at, source_url,
       raw_payload, updated_at
-    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15::jsonb,now())
+    ) values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::jsonb,now())
     on conflict (source, source_record_id) do update set
       solicitation_number = excluded.solicitation_number,
       title_en = excluded.title_en, title_fr = excluded.title_fr,
       description_en = excluded.description_en, description_fr = excluded.description_fr,
       buyer_name = excluded.buyer_name, procurement_category = excluded.procurement_category,
       procurement_code = excluded.procurement_code, estimated_value_cents = excluded.estimated_value_cents,
-      currency = excluded.currency, closing_at = excluded.closing_at, source_url = excluded.source_url,
+      currency = excluded.currency, published_at = excluded.published_at, closing_at = excluded.closing_at, source_url = excluded.source_url,
       raw_payload = excluded.raw_payload, updated_at = now()
     returning id`,
     [
       tender.source, tender.sourceRecordId, tender.solicitationNumber, tender.title.en, tender.title.fr,
       tender.description.en, tender.description.fr, tender.buyerName, tender.procurementCategory,
-      tender.procurementCode, tender.estimatedValueCents, tender.currency ?? "CAD", tender.closingAt,
+      tender.procurementCode, tender.estimatedValueCents, tender.currency ?? "CAD", tender.publishedAt, tender.closingAt,
       tender.sourceUrl, JSON.stringify(tender.rawPayload)
     ]
   );
@@ -56,8 +62,14 @@ function sourceFingerprint(tender: NormalizedTender): string {
 }
 
 async function enqueueTenderJobs(client: PoolClient, tenderId: string, fingerprint: string): Promise<void> {
-  const organizations = await client.query<{ organization_id: string }>("select distinct organization_id from organization_members");
+  const organizations = await client.query<{ organization_id: string }>("select id as organization_id from organizations");
   for (const organization of organizations.rows) {
+    await client.query(
+      `insert into organization_tenders (organization_id, tender_id, status)
+       values ($1, $2, 'new')
+       on conflict (organization_id, tender_id) do nothing`,
+      [organization.organization_id, tenderId]
+    );
     await client.query(
       `insert into tender_processing_jobs (organization_id, tender_id, job_type, source_fingerprint, status, stage, next_run_at)
        values ($1, $2, 'analyze_tender', $3, 'queued', 'queued', now())
@@ -72,7 +84,7 @@ export async function runCanadaBuysIngestion(options: {
   datasetUrl?: string;
   fetchImpl?: FetchLike;
   pool?: Pool;
-}): Promise<{ datasetUrl: string; rowsSeen: number; rowsNormalized: number; rowsRejected: number }> {
+}): Promise<{ datasetUrl: string; rowsSeen: number; rowsAvailable: number; rowsSelected: number; rowsNormalized: number; rowsRejected: number }> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const datasetUrl = options.datasetUrl || await resolveCanadaBuysCsvUrl(fetchImpl);
   const response = await fetchImpl(datasetUrl, { headers: CLIENT_HEADERS });
@@ -85,9 +97,9 @@ export async function runCanadaBuysIngestion(options: {
   try {
     await client.query("begin");
     const run = await client.query<{ id: string }>(
-      `insert into ingestion_runs (source, dataset_url, rows_seen, rows_normalized, rows_rejected)
-       values ('canadabuys', $1, $2, $3, $4) returning id`,
-      [datasetUrl, stats.rowsSeen, stats.records.length, stats.rowsRejected]
+      `insert into ingestion_runs (source, dataset_url, rows_seen, rows_normalized, rows_selected, rows_rejected)
+       values ('canadabuys', $1, $2, $3, $4, $5) returning id`,
+      [datasetUrl, stats.rowsSeen, stats.records.length, stats.records.length, stats.rowsRejected]
     );
     runId = run.rows[0].id;
     for (const tender of stats.records) {
@@ -96,13 +108,13 @@ export async function runCanadaBuysIngestion(options: {
     }
     await client.query("update ingestion_runs set status = 'succeeded', completed_at = now() where id = $1", [runId]);
     await client.query("commit");
-    return { datasetUrl, rowsSeen: stats.rowsSeen, rowsNormalized: stats.records.length, rowsRejected: stats.rowsRejected };
+    return { datasetUrl, rowsSeen: stats.rowsSeen, rowsAvailable: stats.records.length, rowsSelected: stats.records.length, rowsNormalized: stats.records.length, rowsRejected: stats.rowsRejected };
   } catch (error) {
     await client.query("rollback");
     await client.query(
-      `insert into ingestion_runs (source, dataset_url, rows_seen, rows_normalized, rows_rejected, status, completed_at, error_message)
-       values ('canadabuys', $1, $2, $3, $4, 'failed', now(), $5)`,
-      [datasetUrl, stats.rowsSeen, stats.records.length, stats.rowsRejected, error instanceof Error ? error.message : String(error)]
+      `insert into ingestion_runs (source, dataset_url, rows_seen, rows_normalized, rows_selected, rows_rejected, status, completed_at, error_message)
+       values ('canadabuys', $1, $2, $3, $4, $5, 'failed', now(), $6)`,
+      [datasetUrl, stats.rowsSeen, stats.records.length, stats.records.length, stats.rowsRejected, error instanceof Error ? error.message : String(error)]
     );
     throw error;
   } finally {

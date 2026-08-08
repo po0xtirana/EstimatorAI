@@ -20,7 +20,7 @@ export async function updateSession(request: NextRequest) {
   });
   const { data } = await supabase.auth.getClaims();
   const path = request.nextUrl.pathname;
-  const publicPath = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/preview") || path.startsWith("/pricing") || path.startsWith("/_next");
+  const publicPath = path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/preview") || path.startsWith("/pricing") || path.startsWith("/api/tender-intake/") || path.startsWith("/_next");
   const localPreview = isLocalHost(request.nextUrl.hostname) && request.cookies.get(PREVIEW_COOKIE)?.value === "1";
   if (!data?.claims && !publicPath && !localPreview) {
     const redirect = request.nextUrl.clone();

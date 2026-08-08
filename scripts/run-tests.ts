@@ -3,6 +3,7 @@ const tests = [
   "../src/finance/cashflow.test.ts",
   "../src/ingestion/scope-extractor.test.ts",
   "../src/ingestion/canadabuys.test.ts",
+  "../src/ingestion/tender-email.test.ts",
   "../src/matching/engine.test.ts",
   "../src/matching/relevance-learning.test.ts",
   "../src/ingestion/tender-intelligence.test.ts",

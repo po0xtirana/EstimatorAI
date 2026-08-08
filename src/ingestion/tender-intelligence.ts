@@ -127,31 +127,36 @@ export async function enqueueTenderAnalysis(client: PoolClient, result: Canonica
   if (!result.isNewRevision) return;
   const organizations = await client.query<{ organization_id: string }>("select id as organization_id from organizations");
   for (const organization of organizations.rows) {
+    await enqueueTenderAnalysisForOrganization(client, result, organization.organization_id);
+  }
+}
+
+export async function enqueueTenderAnalysisForOrganization(client: PoolClient, result: CanonicalUpsertResult, organizationId: string, options: { force?: boolean } = {}): Promise<void> {
+  if (!result.isNewRevision && !options.force) return;
     await client.query(
       `insert into organization_tenders (organization_id, tender_id, status, updated_at) values ($1,$2,'new',now())
        on conflict (organization_id, tender_id) do update set updated_at=now()`,
-      [organization.organization_id, result.tenderId]
+      [organizationId, result.tenderId]
     );
     await client.query(
       `insert into tender_processing_jobs (organization_id, tender_id, job_type, source_fingerprint, status, stage, next_run_at)
        values ($1,$2,'analyze_tender',$3,'queued','queued',now())
        on conflict (organization_id, tender_id, job_type, source_fingerprint) do nothing`,
-      [organization.organization_id, result.tenderId, result.revisionHash]
+      [organizationId, result.tenderId, result.revisionHash]
     );
-    if (!result.isNewTender && result.changeTypes.includes("deadline")) {
+    if (result.isNewRevision && !result.isNewTender && result.changeTypes.includes("deadline")) {
       await client.query(
         `insert into notifications (organization_id, tender_id, kind, title_en, body_en)
          values ($1,$2,'deadline_changed','Tender deadline changed','A connected source reported a new closing deadline. Review the latest tender revision.')
          on conflict (organization_id, tender_id, kind) do update set body_en=excluded.body_en, read_at=null, created_at=now()`,
-        [organization.organization_id, result.tenderId]
+        [organizationId, result.tenderId]
       );
-    } else if (!result.isNewTender) {
+    } else if (result.isNewRevision && !result.isNewTender) {
       await client.query(
         `insert into notifications (organization_id, tender_id, kind, title_en, body_en)
          values ($1,$2,'amendment','Tender amendment detected','A connected source reported a new tender revision. The analysis has been queued again.')
          on conflict (organization_id, tender_id, kind) do update set body_en=excluded.body_en, read_at=null, created_at=now()`,
-        [organization.organization_id, result.tenderId]
+        [organizationId, result.tenderId]
       );
     }
-  }
 }

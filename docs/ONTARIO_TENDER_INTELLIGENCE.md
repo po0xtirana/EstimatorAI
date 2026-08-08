@@ -10,11 +10,32 @@ EstimatorAI’s product promise is one workflow: monitor connected Ontario tende
 - Canonical fingerprints merge duplicate notices while source references preserve where each listing came from.
 - Immutable revision snapshots detect scope, value, and deadline changes. New revisions enqueue a fresh organization analysis and generate amendment alerts.
 - Source outages, connection requirements, access mode, scan interval, and last success are visible in the product.
-- Restricted portals are never bypassed. MERX, Biddingo, Bonfire, Bids&Tenders, and the Ontario Tenders Portal remain connection-required until licensed or customer-authorized integration is configured.
+- Restricted portals are never bypassed. MERX, Biddingo, Bonfire, Bids&Tenders, and the Ontario Tenders Portal connect through licensed APIs when available or company-authorized notification forwarding.
 - Company matching includes trades, regions, bonding, crew capacity, certifications, project-size rules, preferred buyers and project types, excluded work, and bounded relevance feedback.
 - Viable opportunities remain in the primary feed. Not-viable opportunities stay searchable under **All scanned**.
 - Mandatory certification gaps stop automatic estimating and send the opportunity to review.
 - Qualified tenders continue through the existing document evidence, scope extraction, deterministic estimate, exception, approval, workbook comparison, and actual-job learning workflow.
+
+## Authorized restricted-source connections
+
+Restricted supplier portals do not expose a general supplier API. EstimatorAI
+connects them through a company-authorized notification inbox instead of
+storing portal passwords or bypassing access controls.
+
+1. Verify `TENDER_INBOUND_DOMAIN` as a receiving domain in Resend.
+2. Configure `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET` on the application.
+3. Subscribe the public `/api/tender-intake/resend` endpoint to
+   `email.received` events.
+4. An organization owner creates a private address on **Tender sources**.
+5. The contractor adds that address to MERX, Biddingo, Bids&Tenders, Bonfire,
+   Ontario Tenders Portal, or its estimating-mailbox forwarding rules.
+6. The first signed inbound event verifies the connection. Tender metadata,
+   body evidence, and PDF attachments are deduplicated and queued for the same
+   company-specific matching and estimate workflow as public tenders.
+
+Every address has a random routing token, only its SHA-256 hash is used for
+lookup, and revoking the source invalidates future intake. Resend event IDs and
+email IDs provide idempotency during webhook retries.
 
 ## Ontario renovation baseline
 

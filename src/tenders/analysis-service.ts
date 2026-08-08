@@ -215,10 +215,14 @@ export async function runTenderAnalysis(options: RunTenderAnalysisOptions) {
   await updateJobStage(admin, jobId, "discovering_documents");
   const discovery = await discoverDocuments(admin, organizationId, tender, selectedProfile.id);
   await updateJobStage(admin, jobId, "extracting_scope");
-  const scopeResult = await admin.from("tender_scope_items").select("*").eq("organization_id", organizationId).eq("tender_id", tenderId).neq("review_status", "rejected").order("created_at");
+  const [scopeResult, documentCount] = await Promise.all([
+    admin.from("tender_scope_items").select("*").eq("organization_id", organizationId).eq("tender_id", tenderId).neq("review_status", "rejected").order("created_at"),
+    admin.from("tender_documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("tender_id", tenderId)
+  ]);
   if (scopeResult.error) throw new Error("Failed to load extracted tender scope");
   const scopeRows = scopeResult.data ?? [];
-  if (!scopeRows.length) return { status: discovery.discovered ? "matched_needs_scope_review" : "matched_needs_documents", viable, match, tenderAnalysisId, profile: { id: selectedProfile.id, name: selectedProfile.name, tradeSlug: selectedProfile.trade_slug }, discovery, scopeCount: 0, reason: discovery.discovered ? "Public tender documents were found, but no measurable scope quantity was extracted." : "No public PDF tender attachment was found. Upload the package or add a reviewed scope item to continue." };
+  const hasDocuments = Number(documentCount.count ?? 0) > 0 || discovery.discovered > 0;
+  if (!scopeRows.length) return { status: hasDocuments ? "matched_needs_scope_review" : "matched_needs_documents", viable, match, tenderAnalysisId, profile: { id: selectedProfile.id, name: selectedProfile.name, tradeSlug: selectedProfile.trade_slug }, discovery, scopeCount: 0, reason: hasDocuments ? "Tender documents were received, but no measurable scope quantity was extracted. Review the package or add a scope item." : "No public or authorized tender attachment was found. Upload the package or add a reviewed scope item to continue." };
 
   await updateJobStage(admin, jobId, "estimating");
   const existing = await admin.from("estimate_runs").select("*").eq("organization_id", organizationId).eq("tender_id", tenderId).eq("trade_profile_id", selectedProfile.id).order("created_at", { ascending: false }).limit(1).maybeSingle();

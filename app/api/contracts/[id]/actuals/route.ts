@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireOrganizationContext } from "../../../../../src/auth/org-context";
 import { createAdminClient } from "../../../../../src/lib/supabase/admin";
+import { recordActualLearningEvidence } from "../../../../../src/learning/learning-service";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +38,13 @@ export async function POST(request: Request) {
         estimateRunId = estimate?.id ?? null;
       }
     }
-    const { data, error } = await admin.from("contract_actuals").insert({ organization_id: ctx.organizationId, contract_id: id, estimate_run_id: estimateRunId, actual_kind: body.actualKind, task_key: body.taskKey || null, resource_key: body.resourceKey || null, quantity: body.quantity === undefined ? null : Number(body.quantity), unit: body.unit || null, hours: body.hours === undefined ? null : Number(body.hours), cost_cents: body.costCents === undefined ? null : Number(body.costCents), occurred_on: body.occurredOn || new Date().toISOString().slice(0, 10), notes: body.notes || null }).select("*").single();
+    const eventClassification = body.eventClassification || (body.actualKind === "change_order" ? "change_order" : body.actualKind === "rework" ? "rework" : "baseline");
+    const reconciliationStatus = body.reconciled ? "reconciled" : "partial";
+    const qualityScore = Math.max(40, Math.min(100, Number(body.qualityScore ?? (body.taskKey ? 82 : 68))));
+    const { data, error } = await admin.from("contract_actuals").insert({ organization_id: ctx.organizationId, contract_id: id, estimate_run_id: estimateRunId, actual_kind: body.actualKind, task_key: body.taskKey || null, resource_key: body.resourceKey || null, quantity: body.quantity === undefined ? null : Number(body.quantity), unit: body.unit || null, hours: body.hours === undefined ? null : Number(body.hours), cost_cents: body.costCents === undefined ? null : Number(body.costCents), occurred_on: body.occurredOn || new Date().toISOString().slice(0, 10), reconciliation_status: reconciliationStatus, event_classification: eventClassification, quality_score: qualityScore, notes: body.notes || null }).select("*").single();
     if (error) return NextResponse.json({ error: "Failed to save actual result" }, { status: 500 });
-    return NextResponse.json({ actual: data }, { status: 201 });
+    const model = await recordActualLearningEvidence(admin, { organizationId: ctx.organizationId, contractId: id, actual: data, createdBy: ctx.authSubject });
+    return NextResponse.json({ actual: data, learningModel: model }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to save actual result" }, { status: 500 });
   }

@@ -1,0 +1,5 @@
+-- Cover tenant foreign keys used by RLS-scoped maintenance queries.
+create index estimator_workbook_lines_org_idx on estimator_workbook_lines (organization_id);
+create index estimate_workbook_comparisons_org_idx on estimate_workbook_comparisons (organization_id);
+create index estimate_workbook_comparison_lines_org_idx on estimate_workbook_comparison_lines (organization_id);
+create index trade_profile_calibration_observations_org_idx on trade_profile_calibration_observations (organization_id);

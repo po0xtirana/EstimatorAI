@@ -3,12 +3,14 @@ import type { AccuracyScopeItem, AccuracyTradeProfile } from "./accuracy";
 function asArray(value: unknown) { return Array.isArray(value) ? value : []; }
 
 export async function loadAccuracyTradeProfile(admin: any, organizationId: string, profileId: string): Promise<AccuracyTradeProfile | null> {
-  const [profile, resources, crews, assemblies, staff] = await Promise.all([
+  const [profile, resources, crews, assemblies, staff, calibrations, learningModel] = await Promise.all([
     admin.from("trade_profiles").select("*").eq("id", profileId).eq("organization_id", organizationId).maybeSingle(),
     admin.from("trade_profile_resources").select("*").eq("trade_profile_id", profileId).eq("organization_id", organizationId),
     admin.from("trade_profile_crews").select("*, trade_profile_crew_roles(*)").eq("trade_profile_id", profileId).eq("organization_id", organizationId),
     admin.from("trade_profile_assemblies").select("*").eq("trade_profile_id", profileId).eq("organization_id", organizationId),
-    admin.from("organization_staff").select("role_title, classified_skills, hourly_cost_cents, available").eq("organization_id", organizationId)
+    admin.from("organization_staff").select("role_title, classified_skills, hourly_cost_cents, available").eq("organization_id", organizationId),
+    admin.from("trade_profile_calibrations").select("normalized_kind, applied_factor").eq("trade_profile_id", profileId).eq("organization_id", organizationId).eq("status", "active").eq("metric", "category_cost_factor"),
+    admin.from("learning_model_versions").select("id, version_number, parameters").eq("trade_profile_id", profileId).eq("organization_id", organizationId).eq("status", "active").maybeSingle()
   ]);
   if (profile.error || !profile.data) return null;
   const staffRows = (staff.data ?? []) as Array<{ role_title: string; classified_skills: string[]; hourly_cost_cents: number; available: boolean }>;
@@ -32,6 +34,9 @@ export async function loadAccuracyTradeProfile(admin: any, organizationId: strin
     shiftHours: Number(profile.data.shift_hours ?? 8),
     workingDaysPerWeek: Number(profile.data.working_days_per_week ?? 5),
     currentPipelineLoadPercent: profile.data.current_pipeline_load_percent === null ? null : Number(profile.data.current_pipeline_load_percent),
+    calibrationFactors: Object.fromEntries((calibrations.data ?? []).map((calibration: any) => [calibration.normalized_kind, Number(calibration.applied_factor)])),
+    learningModel: learningModel.data?.parameters ?? null,
+    learningModelVersionId: learningModel.data?.id ?? null,
     resources: (resources.data ?? []).map((resource: any) => {
       if (resource.resource_kind !== "labor") return { resourceKind: resource.resource_kind, resourceKey: resource.resource_key, name: resource.name, unit: resource.unit, rateCents: Number(resource.rate_cents), rateBasis: resource.rate_basis, availableQuantity: resource.available_quantity === null ? null : Number(resource.available_quantity), wastePercent: Number(resource.waste_percent ?? 0) };
       const matches = matchingStaff(resource.resource_key);

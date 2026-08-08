@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import ActualWorkbookPanel from "./actual-workbook-panel";
 
 type CashflowRow = { contract_id: string; month: string; cost_cents: number; billing_cents: number; assumptions: Record<string, unknown> };
 type StaffingRow = { contract_id: string; role_key: string; required_headcount: number; available_headcount: number | null };
@@ -61,6 +62,7 @@ export default function ContractDetailPage() {
       <div className="empty-panel"><h2>Staffing plan</h2>{contract.staffing?.length ? contract.staffing.map((row) => <p key={row.role_key}>{row.role_key}: {row.required_headcount} required{row.available_headcount !== null ? ` / ${row.available_headcount} available` : ""}</p>) : <p>Not configured</p>}</div>
       <div className="empty-panel"><h2>Monthly cashflow</h2>{contract.cashflow?.length ? contract.cashflow.map((row) => <div key={row.month} className="cashflow-row"><span>{new Date(row.month + "-01").toLocaleDateString("en-CA", { month: "short", year: "numeric" })}</span><span>Cost: {money(row.cost_cents)}</span><span>Billing: {money(row.billing_cents)}</span></div>) : <p>Not configured</p>}</div>
     </div>
+    <ActualWorkbookPanel jobId={id} jobComplete={contract.status === "complete"} />
     <section className="profile-card actuals-card"><div className="profile-card-heading"><div><h2>Actual job results</h2><p className="muted">Capture what really happened so future company assumptions can improve without changing this estimate.</p></div><span className="status-pill">{actuals.length} recorded</span></div>
       <div className="actual-summary"><div><span>Actual cost</span><strong>{money(actualCostCents)}</strong></div><div><span>Actual hours</span><strong>{actualHours.toFixed(1)} h</strong></div><div><span>Cost variance</span><strong className={costVarianceCents !== null && costVarianceCents > 0 ? "variance-negative" : "variance-positive"}>{costVarianceCents === null ? "-" : `${costVarianceCents > 0 ? "+" : ""}${money(costVarianceCents)}`}</strong></div></div>
       {actuals.map((actual) => <div className="input-row" key={actual.id}><div><span>{actual.actual_kind}{actual.task_key ? ` - ${actual.task_key}` : ""}</span><small>{actual.occurred_on ?? "Date not set"}{actual.hours !== null ? ` - ${actual.hours} hours` : ""}{actual.notes ? ` - ${actual.notes}` : ""}</small></div><strong>{money(actual.cost_cents)}</strong></div>)}

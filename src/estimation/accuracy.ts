@@ -1,3 +1,5 @@
+import { explainLearning, predictionInterval, resolveLearningFactor, type HierarchicalLearningParameters, type LearningKind, type LearningMetric } from "../learning/hierarchical-model";
+
 export type AccuracyResource = {
   resourceKind: "labor" | "equipment" | "vehicle" | "material" | "subcontractor" | "overhead";
   resourceKey: string;
@@ -39,6 +41,9 @@ export type AccuracyTradeProfile = {
   shiftHours: number;
   workingDaysPerWeek: number;
   currentPipelineLoadPercent?: number | null;
+  calibrationFactors?: Partial<Record<"labor" | "material" | "equipment" | "subcontractor" | "overhead", number>>;
+  learningModel?: HierarchicalLearningParameters | null;
+  learningModelVersionId?: string | null;
   resources: AccuracyResource[];
   crews: AccuracyCrew[];
   assemblies: AccuracyAssembly[];
@@ -105,6 +110,12 @@ export type AccuracyEstimateResult = {
   riskReserveCents: number;
   markupCents: number;
   recommendedPriceCents: number;
+  expectedCostCents: number;
+  p50CostCents: number;
+  p80CostCents: number;
+  uncertainty: { logStandardDeviation: number; method: string };
+  learningDrivers: ReturnType<typeof explainLearning>;
+  learningModelVersionId: string | null;
   laborHours: number;
   scheduleDays: number | null;
   confidenceScore: number;
@@ -117,6 +128,18 @@ function nonNegative(value: number | null | undefined): number {
 
 function money(value: number): number {
   return Math.max(0, Math.round(value));
+}
+
+function learnedFactor(profile: AccuracyTradeProfile, metric: LearningMetric, kind: LearningKind, taskKey?: string | null, resourceKey?: string | null) {
+  const learned = resolveLearningFactor(profile.learningModel, metric, kind, taskKey, resourceKey);
+  if (learned !== 1 || profile.learningModel) return learned;
+  const legacy = profile.calibrationFactors?.[kind as keyof NonNullable<AccuracyTradeProfile["calibrationFactors"]>] ?? 1;
+  return metric === "category_cost_factor" ? Math.max(0.8, Math.min(1.2, Number(legacy))) : 1;
+}
+
+function calibrated(profile: AccuracyTradeProfile, kind: "labor" | "material" | "equipment" | "subcontractor" | "overhead", amount: number, taskKey?: string | null, resourceKey?: string | null): { amount: number; suffix: string } {
+  const factor = learnedFactor(profile, "category_cost_factor", kind, taskKey, resourceKey);
+  return { amount: money(amount * factor), suffix: factor === 1 ? "" : ` × ${factor.toFixed(3)} company learning factor` };
 }
 
 function round(value: number): number {
@@ -193,7 +216,11 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
     const roleCosts = (crew?.roles ?? []).map((role) => ({ role, resource: findResource(profile.resources, "labor", role.roleResourceKey) })).filter((item): item is { role: { roleResourceKey: string; headcount: number; skillSlugs?: string[] }; resource: AccuracyResource } => Boolean(item.resource));
     const totalHeadcount = roleCosts.reduce((sum, item) => sum + item.role.headcount, 0);
     const weightedHourlyCost = totalHeadcount ? roleCosts.reduce((sum, item) => sum + item.resource.rateCents * item.role.headcount, 0) / totalHeadcount : 0;
-    const itemHours = scope.quantity * assembly.laborHoursPerUnit / Math.max(0.1, crew?.productionFactor ?? 1);
+    const laborHoursFactor = learnedFactor(profile, "labor_hours_factor", "labor", assembly.taskKey);
+    const laborRateFactor = learnedFactor(profile, "labor_rate_factor", "labor", assembly.taskKey);
+    const baseItemHours = scope.quantity * assembly.laborHoursPerUnit / Math.max(0.1, crew?.productionFactor ?? 1);
+    const itemHours = baseItemHours * laborHoursFactor;
+    const learnedHourlyCost = weightedHourlyCost * laborRateFactor;
     laborHours += itemHours;
     if (!feasible.some((candidate) => candidate.crewKey === crew?.crewKey)) {
       exceptions.push({ scopeItemId: scope.id, exceptionType: "capacity_gap", severity: "blocking", title: "No feasible crew available", message: `The ${assembly.name} template requires roles or headcount that are not currently available.` });
@@ -201,9 +228,11 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
     if (!roleCosts.length) {
       exceptions.push({ scopeItemId: scope.id, exceptionType: "missing_rate", severity: "blocking", title: "Labor rate required", message: `The ${assembly.name} crew has no configured labor rates.` });
     } else {
-      const laborAmount = money(itemHours * weightedHourlyCost);
+      const laborCalibration = calibrated(profile, "labor", itemHours * learnedHourlyCost, assembly.taskKey);
+      const laborAmount = laborCalibration.amount;
       laborSubtotalCents += laborAmount;
-      lines.push({ id: `${scope.id}-labor`, scopeItemId: scope.id, kind: "labor", taskKey: assembly.taskKey, label: `${assembly.name} labor`, quantity: round(itemHours), unit: "hour", unitCostCents: money(weightedHourlyCost), amountCents: laborAmount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${assembly.laborHoursPerUnit} h/${assembly.unit} × $${(weightedHourlyCost / 100).toFixed(2)}/h`, confidence, sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
+      const laborLearning = `${laborHoursFactor === 1 ? "" : ` × ${laborHoursFactor.toFixed(3)} learned productivity`}${laborRateFactor === 1 ? "" : ` × ${laborRateFactor.toFixed(3)} learned labor rate`}`;
+      lines.push({ id: `${scope.id}-labor`, scopeItemId: scope.id, kind: "labor", taskKey: assembly.taskKey, label: `${assembly.name} labor`, quantity: round(itemHours), unit: "hour", unitCostCents: money(learnedHourlyCost), amountCents: laborAmount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${assembly.laborHoursPerUnit} h/${assembly.unit} × $${(weightedHourlyCost / 100).toFixed(2)}/h${laborLearning}${laborCalibration.suffix}`, confidence, sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
       for (const item of roleCosts) pushDemand(demand, item.resource, itemHours * item.role.headcount / totalHeadcount, `${assembly.name} labor hours`);
     }
 
@@ -214,10 +243,15 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
         continue;
       }
       const waste = 1 + (component.wastePercent ?? resource.wastePercent ?? assembly.defaultWastePercent ?? 0) / 100;
-      const quantity = scope.quantity * component.quantityPerUnit * waste;
-      const amount = money(quantity * resource.rateCents);
+      const consumptionFactor = learnedFactor(profile, "material_consumption_factor", "material", assembly.taskKey, resource.resourceKey);
+      const unitCostFactor = learnedFactor(profile, "unit_cost_factor", "material", assembly.taskKey, resource.resourceKey);
+      const quantity = scope.quantity * component.quantityPerUnit * waste * consumptionFactor;
+      const learnedUnitCost = resource.rateCents * unitCostFactor;
+      const materialCalibration = calibrated(profile, "material", quantity * learnedUnitCost, assembly.taskKey, resource.resourceKey);
+      const amount = materialCalibration.amount;
       materialSubtotalCents += amount;
-      lines.push({ id: `${scope.id}-material-${component.resourceKey}`, scopeItemId: scope.id, kind: "material", taskKey: assembly.taskKey, resourceKey: resource.resourceKey, label: resource.name, quantity: round(quantity), unit: resource.unit, unitCostCents: resource.rateCents, amountCents: amount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${component.quantityPerUnit} ${resource.unit}/${assembly.unit} × ${waste.toFixed(2)} waste factor`, confidence, sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
+      const materialLearning = `${consumptionFactor === 1 ? "" : ` × ${consumptionFactor.toFixed(3)} learned consumption`}${unitCostFactor === 1 ? "" : ` × ${unitCostFactor.toFixed(3)} learned unit cost`}`;
+      lines.push({ id: `${scope.id}-material-${component.resourceKey}`, scopeItemId: scope.id, kind: "material", taskKey: assembly.taskKey, resourceKey: resource.resourceKey, label: resource.name, quantity: round(quantity), unit: resource.unit, unitCostCents: money(learnedUnitCost), amountCents: amount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${component.quantityPerUnit} ${resource.unit}/${assembly.unit} × ${waste.toFixed(2)} waste factor${materialLearning}${materialCalibration.suffix}`, confidence, sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
       pushDemand(demand, resource, quantity, `${assembly.name} material consumption`);
     }
 
@@ -227,10 +261,15 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
         exceptions.push({ scopeItemId: scope.id, exceptionType: "missing_rate", severity: "warning", title: "Equipment rate required", message: `No equipment or vehicle rate is configured for ${component.resourceKey}.` });
         continue;
       }
-      const quantity = scope.quantity * component.quantityPerUnit;
-      const amount = money(quantity * resource.rateCents);
+      const durationFactor = learnedFactor(profile, "equipment_duration_factor", "equipment", assembly.taskKey, resource.resourceKey);
+      const equipmentRateFactor = learnedFactor(profile, "unit_cost_factor", "equipment", assembly.taskKey, resource.resourceKey);
+      const quantity = scope.quantity * component.quantityPerUnit * durationFactor;
+      const learnedEquipmentRate = resource.rateCents * equipmentRateFactor;
+      const equipmentCalibration = calibrated(profile, "equipment", quantity * learnedEquipmentRate, assembly.taskKey, resource.resourceKey);
+      const amount = equipmentCalibration.amount;
       equipmentSubtotalCents += amount;
-      lines.push({ id: `${scope.id}-equipment-${component.resourceKey}`, scopeItemId: scope.id, kind: resource.resourceKind, taskKey: assembly.taskKey, resourceKey: resource.resourceKey, label: resource.name, quantity: round(quantity), unit: resource.unit, unitCostCents: resource.rateCents, amountCents: amount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${component.quantityPerUnit} ${resource.unit}/${assembly.unit}`, confidence: Math.max(40, confidence - 5), sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
+      const equipmentLearning = `${durationFactor === 1 ? "" : ` × ${durationFactor.toFixed(3)} learned utilization`}${equipmentRateFactor === 1 ? "" : ` × ${equipmentRateFactor.toFixed(3)} learned unit cost`}`;
+      lines.push({ id: `${scope.id}-equipment-${component.resourceKey}`, scopeItemId: scope.id, kind: resource.resourceKind, taskKey: assembly.taskKey, resourceKey: resource.resourceKey, label: resource.name, quantity: round(quantity), unit: resource.unit, unitCostCents: money(learnedEquipmentRate), amountCents: amount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${component.quantityPerUnit} ${resource.unit}/${assembly.unit}${equipmentLearning}${equipmentCalibration.suffix}`, confidence: Math.max(40, confidence - 5), sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
       pushDemand(demand, resource, quantity, `${assembly.name} equipment demand`);
     }
   }
@@ -242,26 +281,33 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
   }
   const overheadResources = profile.resources.filter((resource) => resource.resourceKind === "overhead");
   const overheadSubtotalCents = overheadResources.reduce((sum, resource) => {
-    const amount = resource.rateBasis === "lump_sum" || resource.rateBasis === "unit" ? resource.rateCents : money(laborHours * resource.rateCents);
-    lines.push({ id: `overhead-${resource.resourceKey}`, kind: "overhead", resourceKey: resource.resourceKey, label: resource.name, quantity: 1, unit: resource.unit, unitCostCents: resource.rateCents, amountCents: amount, formula: resource.rateBasis === "lump_sum" ? "Company overhead allocation" : `${laborHours.toFixed(2)} h × $${(resource.rateCents / 100).toFixed(2)}/h`, confidence: 85, sourceType: "company_assumption" });
+    const baseAmount = resource.rateBasis === "lump_sum" || resource.rateBasis === "unit" ? resource.rateCents : money(laborHours * resource.rateCents);
+    const overheadFactor = learnedFactor(profile, "overhead_factor", "overhead", null, resource.resourceKey);
+    const overheadCalibration = calibrated(profile, "overhead", baseAmount * overheadFactor, null, resource.resourceKey);
+    const amount = overheadCalibration.amount;
+    lines.push({ id: `overhead-${resource.resourceKey}`, kind: "overhead", resourceKey: resource.resourceKey, label: resource.name, quantity: 1, unit: resource.unit, unitCostCents: resource.rateCents, amountCents: amount, formula: `${resource.rateBasis === "lump_sum" ? "Company overhead allocation" : `${laborHours.toFixed(2)} h × $${(resource.rateCents / 100).toFixed(2)}/h`}${overheadFactor === 1 ? "" : ` × ${overheadFactor.toFixed(3)} learned overhead`}${overheadCalibration.suffix}`, confidence: 85, sourceType: "company_assumption" });
     return sum + amount;
   }, 0);
-  const mobilization = nonNegative(profile.mobilizationCents);
-  if (mobilization > 0) lines.push({ id: "mobilization", kind: "mobilization", label: "Mobilization and setup", quantity: 1, unit: "lump sum", unitCostCents: mobilization, amountCents: mobilization, formula: "Trade profile mobilization allowance", confidence: 80, sourceType: "company_assumption" });
+  const mobilizationCalibration = calibrated(profile, "overhead", nonNegative(profile.mobilizationCents));
+  const mobilization = mobilizationCalibration.amount;
+  if (mobilization > 0) lines.push({ id: "mobilization", kind: "mobilization", label: "Mobilization and setup", quantity: 1, unit: "lump sum", unitCostCents: nonNegative(profile.mobilizationCents), amountCents: mobilization, formula: `Trade profile mobilization allowance${mobilizationCalibration.suffix}`, confidence: 80, sourceType: "company_assumption" });
   const subtotalBeforeRisk = laborSubtotalCents + materialSubtotalCents + equipmentSubtotalCents + subcontractorSubtotalCents + overheadSubtotalCents + mobilization;
-  const riskReserveCents = money(subtotalBeforeRisk * nonNegative(profile.contingencyPercent) / 100);
+  const riskFactor = learnedFactor(profile, "risk_factor", "risk");
+  const riskReserveCents = money(subtotalBeforeRisk * nonNegative(profile.contingencyPercent) / 100 * riskFactor);
   if (riskReserveCents > 0) lines.push({ id: "risk-reserve", kind: "risk", label: "Contingency and risk reserve", quantity: nonNegative(profile.contingencyPercent), unit: "%", unitCostCents: subtotalBeforeRisk, amountCents: riskReserveCents, formula: `$${(subtotalBeforeRisk / 100).toFixed(2)} × ${nonNegative(profile.contingencyPercent).toFixed(2)}%`, confidence: 70, sourceType: "company_assumption" });
   const costBeforeMarkup = subtotalBeforeRisk + riskReserveCents;
   const markupCents = money(costBeforeMarkup * nonNegative(profile.targetMarkupPercent) / 100);
   lines.push({ id: "markup", kind: "markup", label: "Target markup", quantity: nonNegative(profile.targetMarkupPercent), unit: "%", unitCostCents: costBeforeMarkup, amountCents: markupCents, formula: `$${(costBeforeMarkup / 100).toFixed(2)} × ${nonNegative(profile.targetMarkupPercent).toFixed(2)}%`, confidence: 90, sourceType: "company_assumption" });
 
   const dailyCapacity = feasible.length ? Math.max(...feasible.map((crew) => crew.roles.reduce((sum, role) => sum + role.headcount, 0) * profile.shiftHours * crew.productionFactor)) : 0;
-  const scheduleDays = dailyCapacity > 0 ? round(laborHours / dailyCapacity) : null;
+  const scheduleFactor = learnedFactor(profile, "schedule_factor", "schedule");
+  const scheduleDays = dailyCapacity > 0 ? round(laborHours / dailyCapacity * scheduleFactor) : null;
   if (scheduleDays === null && laborHours > 0) exceptions.push({ exceptionType: "schedule_risk", severity: "blocking", title: "Crew capacity required", message: "Add a crew template with roles and headcount to calculate schedule duration." });
   const capacityGap = profile.currentPipelineLoadPercent !== null && profile.currentPipelineLoadPercent !== undefined && profile.currentPipelineLoadPercent >= 80;
   if (capacityGap) exceptions.push({ exceptionType: "capacity_gap", severity: "warning", title: "Pipeline capacity is constrained", message: `Current pipeline load is ${profile.currentPipelineLoadPercent}%. Review the staffing plan before bidding.` });
   const blockingCount = exceptions.filter((exception) => exception.severity === "blocking").length;
   const confidenceScore = Math.max(0, Math.min(100, Math.round((confidenceCount ? confidenceTotal / confidenceCount : 0) - blockingCount * 12)));
   const bidScore = Math.max(0, Math.min(100, Math.round(confidenceScore - (capacityGap ? 15 : 0) - blockingCount * 20)));
-  return { lines, exceptions, resourceDemand: Array.from(demand.values()), laborSubtotalCents, materialSubtotalCents, equipmentSubtotalCents, subcontractorSubtotalCents, overheadSubtotalCents, riskReserveCents, markupCents, recommendedPriceCents: costBeforeMarkup + markupCents, laborHours: round(laborHours), scheduleDays, confidenceScore, bidScore };
+  const interval = predictionInterval(costBeforeMarkup, profile.learningModel, { labor: laborSubtotalCents, material: materialSubtotalCents, equipment: equipmentSubtotalCents, subcontractor: subcontractorSubtotalCents, overhead: overheadSubtotalCents + mobilization, risk: riskReserveCents });
+  return { lines, exceptions, resourceDemand: Array.from(demand.values()), laborSubtotalCents, materialSubtotalCents, equipmentSubtotalCents, subcontractorSubtotalCents, overheadSubtotalCents, riskReserveCents, markupCents, recommendedPriceCents: costBeforeMarkup + markupCents, expectedCostCents: interval.expectedCostCents, p50CostCents: interval.p50CostCents, p80CostCents: interval.p80CostCents, uncertainty: { logStandardDeviation: interval.logStandardDeviation, method: interval.method }, learningDrivers: explainLearning(profile.learningModel), learningModelVersionId: profile.learningModelVersionId ?? null, laborHours: round(laborHours), scheduleDays, confidenceScore, bidScore };
 }

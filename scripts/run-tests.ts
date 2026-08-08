@@ -7,11 +7,16 @@ const tests = [
   "../src/estimation/profile.test.ts",
   "../src/estimation/engine.test.ts",
   "../src/estimation/accuracy.test.ts",
+  "../src/learning/estimator-workbook.test.ts",
+  "../src/learning/hierarchical-model.test.ts",
   "../src/notifications/match-alert.test.ts"
 ];
 
 async function main() {
-  for (const test of tests) await import(test);
+  for (const test of tests) {
+    const module = await import(test);
+    if (module.default instanceof Promise) await module.default;
+  }
   console.log(`Executed ${tests.length} test modules.`);
 }
 

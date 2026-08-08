@@ -4,7 +4,7 @@ import { createAdminClient } from "../../../../../src/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
 
-type ActualRow = { task_key: string | null; actual_kind: string; hours: number | null; quantity: number | null; cost_cents: number | null };
+type ActualRow = { estimate_run_id: string | null; task_key: string | null; actual_kind: string; hours: number | null; quantity: number | null; cost_cents: number | null; reconciliation_status?: string };
 type AssemblyRow = { id: string; task_key: string; name: string; unit: string; labor_hours_per_unit: number };
 
 export async function GET(request: Request) {
@@ -22,18 +22,17 @@ export async function GET(request: Request) {
     const estimateIds = (estimatesResult.data ?? []).map((estimate) => estimate.id);
     const versions = versionsResult.data ?? [];
     if (!estimateIds.length) return NextResponse.json({ suggestions: [], sampleCount: 0, versions });
-    const actualsResult = await admin.from("contract_actuals").select("task_key, actual_kind, hours, quantity, cost_cents").eq("organization_id", ctx.organizationId).in("estimate_run_id", estimateIds).in("actual_kind", ["labor", "material", "equipment", "subcontractor"]);
+    const actualsResult = await admin.from("contract_actuals").select("estimate_run_id, task_key, actual_kind, hours, quantity, cost_cents, reconciliation_status").eq("organization_id", ctx.organizationId).in("estimate_run_id", estimateIds).eq("actual_kind", "labor").neq("reconciliation_status", "rejected");
     if (actualsResult.error) return NextResponse.json({ error: "Failed to load actual job results" }, { status: 500 });
     const assemblies = (assembliesResult.data ?? []) as AssemblyRow[];
-    const groups = new Map<string, { sampleCount: number; hours: number; quantity: number; cost: number; costHours: number }>();
+    const groups = new Map<string, { projectIds: Set<string>; hours: number; quantity: number; cost: number }>();
     for (const actual of (actualsResult.data ?? []) as ActualRow[]) {
       if (!actual.task_key) continue;
-      const group = groups.get(actual.task_key) ?? { sampleCount: 0, hours: 0, quantity: 0, cost: 0, costHours: 0 };
-      group.sampleCount += 1;
+      const group = groups.get(actual.task_key) ?? { projectIds: new Set<string>(), hours: 0, quantity: 0, cost: 0 };
+      if (actual.estimate_run_id) group.projectIds.add(actual.estimate_run_id);
       group.hours += Number(actual.hours ?? 0);
       group.quantity += Number(actual.quantity ?? 0);
       group.cost += Number(actual.cost_cents ?? 0);
-      if (actual.hours && actual.hours > 0) group.costHours += Number(actual.cost_cents ?? 0) / Number(actual.hours);
       groups.set(actual.task_key, group);
     }
     const suggestions = Array.from(groups.entries()).map(([taskKey, group]) => {
@@ -43,7 +42,7 @@ export async function GET(request: Request) {
         assemblyId: assembly?.id ?? null,
         name: assembly?.name ?? taskKey,
         unit: assembly?.unit ?? "unit",
-        sampleCount: group.sampleCount,
+        sampleCount: group.projectIds.size,
         currentLaborHoursPerUnit: assembly?.labor_hours_per_unit ?? null,
         suggestedLaborHoursPerUnit: group.quantity > 0 ? Math.round((group.hours / group.quantity) * 10000) / 10000 : null,
         actualHourlyCostCents: group.hours > 0 ? Math.round(group.cost / group.hours) : null,

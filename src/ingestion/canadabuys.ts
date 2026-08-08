@@ -3,7 +3,7 @@
 export type BilingualText = { en: string | null; fr: string | null };
 
 export type NormalizedTender = {
-  source: "canadabuys";
+  source: string;
   sourceRecordId: string;
   solicitationNumber: string | null;
   title: BilingualText;
@@ -13,6 +13,7 @@ export type NormalizedTender = {
   procurementCode: string | null;
   estimatedValueCents: number | null;
   currency: "CAD" | null;
+  publishedAt?: string | null;
   closingAt: string | null;
   sourceUrl: string | null;
   rawPayload: Record<string, string>;
@@ -30,6 +31,7 @@ const fields = {
   buyer: ["contractingEntityName-nomEntitContractante-eng", "contractingEntityName-nomEntitContractante-fra", "tenderOrganizationName-nomOrganisationAppelOffres", "buyer_name", "organization"],
   category: ["procurementCategory-categorieApprovisionnement", "procurement_category", "category"],
   value: ["tenderValue-appelOffresValeur", "estimated_value", "contract_value"],
+  publication: ["publicationDate-datePublication", "publicationDate", "publication_date", "published_at"],
   currency: ["contractCurrency-contratMonnaie", "currency"],
   closing: ["tenderClosingDate-appelOffresDateCloture", "tenderClosingDate-appelOffresdateCloture", "closing_date", "closing_at"],
   url: ["noticeURL-URLavis-eng", "noticeURL-URLavis-fra", "noticeURL-urlAvis", "source_url", "url"]
@@ -51,7 +53,7 @@ function parseMoneyCents(input: string | null): number | null {
   return Number.isSafeInteger(cents) && cents >= 0 ? cents : null;
 }
 
-function parseClosingAt(input: string | null): string | null {
+function parseTimestamp(input: string | null): string | null {
   if (!input) return null;
   // The documented CanadaBuys format is UTC-0500. An explicit offset is
   // required so a server's local timezone cannot silently change the deadline.
@@ -90,7 +92,8 @@ export function normalizeCanadaBuysRow(row: CsvRow): NormalizedTender | null {
     procurementCode,
     estimatedValueCents: parseMoneyCents(value(row, fields.value)),
     currency: currency === "CAD" || !currency ? "CAD" : null,
-    closingAt: parseClosingAt(value(row, fields.closing)),
+    publishedAt: parseTimestamp(value(row, fields.publication)),
+    closingAt: parseTimestamp(value(row, fields.closing)),
     sourceUrl: value(row, fields.url),
     rawPayload: { ...row }
   };

@@ -1,0 +1,36 @@
+name: Tender analysis processing
+
+on:
+  schedule:
+    - cron: "45 */2 * * *"
+  workflow_dispatch:
+
+jobs:
+  process:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Check processing configuration
+        id: config
+        shell: bash
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [[ -z "$NEXT_PUBLIC_SUPABASE_URL" || -z "$SUPABASE_SECRET_KEY" ]]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Tender processing skipped because NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY are required."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+      - run: npm run process:tender-jobs
+        if: steps.config.outputs.configured == 'true'
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

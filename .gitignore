@@ -1,5 +1,6 @@
 node_modules/
 .next/
+.next-dev/
 .next-clean/
 .next-clean-verify/
 .next-clean-verify-2/

@@ -60,6 +60,7 @@ export default function LoginPage() {
         {message && <div className="auth-message auth-success" role="status"><strong>{message}</strong><span>Check your inbox and spam folder. The link is single-use and expires.</span></div>}
         {errorMessage && <p className="auth-message auth-error" role="alert">{errorMessage}</p>}
         {localPreview && <a className="auth-preview-link" href="/preview">Preview the interface without email</a>}
+        <a className="auth-preview-link" href="/pricing">View the Ontario contractor pilot</a>
       </div>
     </main>
   );

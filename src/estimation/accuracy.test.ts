@@ -34,3 +34,7 @@ const crewChoice = generateAccuracyEstimate({
   ]
 }, [{ id: "scope-3", taskKey: "paint-walls", description: "Paint walls", quantity: 10, unit: "m2", confidence: 90 }]);
 if (crewChoice.lines.find((line) => line.kind === "labor")?.unitCostCents !== 2000) throw new Error("least-cost feasible crew selection failed");
+
+const calibrated = generateAccuracyEstimate({ ...profile, calibrationFactors: { labor: 1.1, material: 0.9 } }, [{ id: "scope-4", taskKey: "paint-walls", description: "Paint walls", quantity: 100, unit: "m2", confidence: 90 }]);
+if (calibrated.laborSubtotalCents !== 44000 || calibrated.materialSubtotalCents !== 21384) throw new Error("company learning calibration failed");
+if (!calibrated.lines.find((line) => line.kind === "labor")?.formula.includes("company learning factor")) throw new Error("calibration evidence failed");

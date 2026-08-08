@@ -28,6 +28,20 @@ function asRawPayload(value: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, typeof item === "string" ? item : JSON.stringify(item)]));
 }
 
+function opportunityUrgency(closingAt: string | null): "low" | "normal" | "high" | "critical" {
+  if (!closingAt) return "normal";
+  const days = (Date.parse(closingAt) - Date.now()) / 86_400_000;
+  if (days <= 3) return "critical";
+  if (days <= 7) return "high";
+  if (days >= 21) return "low";
+  return "normal";
+}
+
+function estimatingEffortMinutes(tender: any, matchedTrades: number): number {
+  const payloadSize = Object.keys(asRawPayload(tender.raw_payload)).length;
+  return Math.min(360, 45 + matchedTrades * 30 + Math.min(120, payloadSize * 2));
+}
+
 function publicUrls(tender: any): string[] {
   const values = [tender.source_url, ...Object.values(asRawPayload(tender.raw_payload))];
   return Array.from(new Set(values.filter((value): value is string => typeof value === "string" && /^https?:\/\//i.test(value)))).slice(0, 8);
@@ -121,12 +135,13 @@ export async function runTenderAnalysis(options: RunTenderAnalysisOptions) {
   const { data: tender, error: tenderError } = await admin.from("tenders").select("*").eq("id", tenderId).maybeSingle();
   if (tenderError || !tender) throw new Error("Tender not found");
 
-  const [capability, trades, certifications, regions, profiles] = await Promise.all([
+  const [capability, trades, certifications, regions, profiles, preferences] = await Promise.all([
     admin.from("organization_capability_profiles").select("bonding_capacity_cents, available_crew_size, pipeline_load_percent").eq("organization_id", organizationId).maybeSingle(),
     admin.from("organization_trades").select("trade_catalog(slug)").eq("organization_id", organizationId),
     admin.from("organization_certifications").select("certification_key, name_en").eq("organization_id", organizationId),
     admin.from("organization_regions").select("region_key, name_en").eq("organization_id", organizationId),
-    admin.from("trade_profiles").select("id, trade_slug, name, active").eq("organization_id", organizationId).eq("active", true)
+    admin.from("trade_profiles").select("id, trade_slug, name, active, minimum_project_size_cents").eq("organization_id", organizationId).eq("active", true),
+    admin.from("organization_match_preferences").select("*").eq("organization_id", organizationId).maybeSingle()
   ]);
   const tradeSlugs = (trades.data ?? []).map((row: any) => Array.isArray(row.trade_catalog) ? row.trade_catalog[0]?.slug : row.trade_catalog?.slug).filter(Boolean);
   const capabilityProfile: CapabilityProfile = {
@@ -135,10 +150,17 @@ export async function runTenderAnalysis(options: RunTenderAnalysisOptions) {
     serviceRegions: (regions.data ?? []).map((row: any) => row.name_en ?? row.region_key).filter(Boolean),
     bondingCapacityCents: capability.data?.bonding_capacity_cents == null ? null : Number(capability.data.bonding_capacity_cents),
     availableCrewSize: capability.data?.available_crew_size == null ? null : Number(capability.data.available_crew_size),
-    pipelineLoadPercent: capability.data?.pipeline_load_percent == null ? null : Number(capability.data.pipeline_load_percent)
+    pipelineLoadPercent: capability.data?.pipeline_load_percent == null ? null : Number(capability.data.pipeline_load_percent),
+    minimumProjectSizeCents: Math.min(...(profiles.data ?? []).map((profile: any) => Number(profile.minimum_project_size_cents)).filter((value: number) => Number.isFinite(value) && value > 0), Infinity) === Infinity ? null : Math.min(...(profiles.data ?? []).map((profile: any) => Number(profile.minimum_project_size_cents)).filter((value: number) => Number.isFinite(value) && value > 0)),
+    maximumProjectSizeCents: preferences.data?.maximum_project_size_cents == null ? null : Number(preferences.data.maximum_project_size_cents),
+    preferredBuyers: preferences.data?.preferred_buyers ?? [],
+    preferredProjectTypes: preferences.data?.preferred_project_types ?? [],
+    excludedTerms: preferences.data?.excluded_terms ?? [],
+    learnedPositiveTerms: preferences.data?.learned_positive_terms ?? {},
+    learnedNegativeTerms: preferences.data?.learned_negative_terms ?? {}
   };
   const normalizedTender = {
-    source: "canadabuys" as const,
+    source: tender.source,
     sourceRecordId: tender.source_record_id,
     solicitationNumber: tender.solicitation_number,
     title: { en: tender.title_en, fr: tender.title_fr },
@@ -148,14 +170,20 @@ export async function runTenderAnalysis(options: RunTenderAnalysisOptions) {
     procurementCode: tender.procurement_code,
     estimatedValueCents: tender.estimated_value_cents == null ? null : Number(tender.estimated_value_cents),
     currency: "CAD" as const,
+    publishedAt: tender.published_at,
     closingAt: tender.closing_at,
     sourceUrl: tender.source_url,
     rawPayload: asRawPayload(tender.raw_payload)
   };
   const match = matchTender(normalizedTender, capabilityProfile);
   const selectedProfile = (profiles.data ?? []).find((candidate: any) => match.matchedTrades.includes(candidate.trade_slug));
-  const viable = match.matchedTrades.length > 0 && match.score >= 50;
-  const decision = !viable ? "not_viable" : selectedProfile ? "viable" : "review";
+  const capabilityMatch = !match.blocked && match.matchedTrades.length > 0 && match.score >= 50;
+  const complianceReview = match.missingCertifications.length > 0;
+  const viable = capabilityMatch && !complianceReview && Boolean(selectedProfile);
+  const decision = !capabilityMatch ? "not_viable" : complianceReview || !selectedProfile ? "review" : "viable";
+  const urgency = opportunityUrgency(tender.closing_at);
+  const effort = estimatingEffortMinutes(tender, match.matchedTrades.length);
+  const recommendedAction = decision === "viable" ? "Review extracted scope and draft estimate" : complianceReview ? "Resolve the certification gap before estimating" : decision === "review" ? "Complete the matched operating model" : match.blocked ? "Keep out of the main feed" : "Review capability gaps before bidding";
   const sourceFingerprint = tenderSourceFingerprint(tender);
   await updateJobStage(admin, jobId, "matching");
   const analysisResult = await admin.from("tender_analyses").upsert({
@@ -170,22 +198,31 @@ export async function runTenderAnalysis(options: RunTenderAnalysisOptions) {
     components: match.components,
     capability_gaps: match.reasons.map((reason) => ({ type: "capability_check", message: reason })),
     reasons: match.reasons,
+    project_type: match.detectedProjectType,
+    urgency,
+    expected_estimating_effort_minutes: effort,
+    recommended_action: recommendedAction,
     computed_at: new Date().toISOString()
   }, { onConflict: "organization_id,tender_id,source_fingerprint" }).select("id").single();
   if (analysisResult.error || !analysisResult.data) throw new Error("Failed to save tender analysis");
   const tenderAnalysisId = analysisResult.data.id;
   await admin.from("tender_matches").upsert({ organization_id: organizationId, tender_id: tenderId, score: match.score, components: match.components, explanation: match.explanation, computed_at: new Date().toISOString() }, { onConflict: "organization_id,tender_id" });
-  await admin.from("organization_tenders").upsert({ organization_id: organizationId, tender_id: tenderId, match_score: match.score, status: viable ? "reviewing" : "no_go" }, { onConflict: "organization_id,tender_id" });
-  if (!viable) return { status: "not_viable", viable, match, tenderAnalysisId, reason: "The tender does not match a configured trade profile and capability baseline." };
+  await admin.from("organization_tenders").upsert({ organization_id: organizationId, tender_id: tenderId, match_score: match.score, status: decision === "not_viable" ? "no_go" : "reviewing", decision, urgency, estimating_effort_minutes: effort, recommended_action: recommendedAction, updated_at: new Date().toISOString() }, { onConflict: "organization_id,tender_id" });
+  if (!capabilityMatch) return { status: "not_viable", viable: false, match, tenderAnalysisId, reason: "The tender does not match the configured trade and capability baseline." };
+  if (complianceReview) return { status: "matched_needs_compliance_review", viable: false, match, tenderAnalysisId, reason: `Required certifications need review: ${match.missingCertifications.join(", ")}.` };
   if (!selectedProfile) return { status: "matched_needs_profile", viable, match, tenderAnalysisId, reason: "The company capability profile matches this tender, but no active operating model exists for the matched trade." };
 
   await updateJobStage(admin, jobId, "discovering_documents");
   const discovery = await discoverDocuments(admin, organizationId, tender, selectedProfile.id);
   await updateJobStage(admin, jobId, "extracting_scope");
-  const scopeResult = await admin.from("tender_scope_items").select("*").eq("organization_id", organizationId).eq("tender_id", tenderId).neq("review_status", "rejected").order("created_at");
+  const [scopeResult, documentCount] = await Promise.all([
+    admin.from("tender_scope_items").select("*").eq("organization_id", organizationId).eq("tender_id", tenderId).neq("review_status", "rejected").order("created_at"),
+    admin.from("tender_documents").select("id", { count: "exact", head: true }).eq("organization_id", organizationId).eq("tender_id", tenderId)
+  ]);
   if (scopeResult.error) throw new Error("Failed to load extracted tender scope");
   const scopeRows = scopeResult.data ?? [];
-  if (!scopeRows.length) return { status: discovery.discovered ? "matched_needs_scope_review" : "matched_needs_documents", viable, match, tenderAnalysisId, profile: { id: selectedProfile.id, name: selectedProfile.name, tradeSlug: selectedProfile.trade_slug }, discovery, scopeCount: 0, reason: discovery.discovered ? "Public tender documents were found, but no measurable scope quantity was extracted." : "No public PDF tender attachment was found. Upload the package or add a reviewed scope item to continue." };
+  const hasDocuments = Number(documentCount.count ?? 0) > 0 || discovery.discovered > 0;
+  if (!scopeRows.length) return { status: hasDocuments ? "matched_needs_scope_review" : "matched_needs_documents", viable, match, tenderAnalysisId, profile: { id: selectedProfile.id, name: selectedProfile.name, tradeSlug: selectedProfile.trade_slug }, discovery, scopeCount: 0, reason: hasDocuments ? "Tender documents were received, but no measurable scope quantity was extracted. Review the package or add a scope item." : "No public or authorized tender attachment was found. Upload the package or add a reviewed scope item to continue." };
 
   await updateJobStage(admin, jobId, "estimating");
   const existing = await admin.from("estimate_runs").select("*").eq("organization_id", organizationId).eq("tender_id", tenderId).eq("trade_profile_id", selectedProfile.id).order("created_at", { ascending: false }).limit(1).maybeSingle();

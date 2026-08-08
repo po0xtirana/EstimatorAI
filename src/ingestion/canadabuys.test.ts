@@ -16,3 +16,6 @@ if (liveRecord.buyerName !== "Public Works") throw new Error("live buyer header 
 if (liveRecord.description.en !== "Paint and drywall works") throw new Error("live description header failed");
 if (liveRecord.sourceUrl !== "https://example.test/cb-2") throw new Error("live URL header failed");
 if (liveRecord.closingAt !== "2026-08-20T19:00:00.000Z") throw new Error("live closing header failed");
+
+const publicationRecord = normalizeCanadaBuysCsv(`title-titre-eng,solicitationNumber-numeroSollicitation,publicationDate-datePublication\nRecent,RECENT,2026-08-02T14:00:00`)[0];
+if (publicationRecord.publishedAt !== "2026-08-02T19:00:00.000Z") throw new Error("publication date header failed");

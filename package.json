@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:clean": "node scripts/clean-next-cache.mjs && next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -12,6 +13,7 @@
     "verify:migrations": "tsx scripts/verify-migrations.ts",
     "seed:demo": "tsx scripts/seed-demo-workspace.ts",
     "ingest:canadabuys": "tsx scripts/ingest-canadabuys.ts",
+    "ingest:tender-sources": "tsx scripts/ingest-tender-sources.ts",
     "process:tender-jobs": "tsx scripts/process-tender-jobs.ts",
     "learning:rebuild": "tsx scripts/rebuild-learning-models.ts"
   },

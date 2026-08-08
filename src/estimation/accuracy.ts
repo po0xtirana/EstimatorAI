@@ -256,21 +256,23 @@ export function generateAccuracyEstimate(profile: AccuracyTradeProfile, scopeIte
     }
 
     for (const component of assembly.equipmentComponents ?? []) {
-      const resource = findResource(profile.resources, "equipment", component.resourceKey) ?? findResource(profile.resources, "vehicle", component.resourceKey);
+      const resource = findResource(profile.resources, "equipment", component.resourceKey) ?? findResource(profile.resources, "vehicle", component.resourceKey) ?? findResource(profile.resources, "subcontractor", component.resourceKey);
       if (!resource) {
-        exceptions.push({ scopeItemId: scope.id, exceptionType: "missing_rate", severity: "warning", title: "Equipment rate required", message: `No equipment or vehicle rate is configured for ${component.resourceKey}.` });
+        exceptions.push({ scopeItemId: scope.id, exceptionType: "missing_rate", severity: "warning", title: "Resource rate required", message: `No equipment, vehicle, or subcontractor rate is configured for ${component.resourceKey}.` });
         continue;
       }
-      const durationFactor = learnedFactor(profile, "equipment_duration_factor", "equipment", assembly.taskKey, resource.resourceKey);
-      const equipmentRateFactor = learnedFactor(profile, "unit_cost_factor", "equipment", assembly.taskKey, resource.resourceKey);
+      const costKind = resource.resourceKind === "subcontractor" ? "subcontractor" : "equipment";
+      const durationFactor = resource.resourceKind === "subcontractor" ? 1 : learnedFactor(profile, "equipment_duration_factor", "equipment", assembly.taskKey, resource.resourceKey);
+      const equipmentRateFactor = learnedFactor(profile, "unit_cost_factor", costKind, assembly.taskKey, resource.resourceKey);
       const quantity = scope.quantity * component.quantityPerUnit * durationFactor;
       const learnedEquipmentRate = resource.rateCents * equipmentRateFactor;
-      const equipmentCalibration = calibrated(profile, "equipment", quantity * learnedEquipmentRate, assembly.taskKey, resource.resourceKey);
+      const equipmentCalibration = calibrated(profile, costKind, quantity * learnedEquipmentRate, assembly.taskKey, resource.resourceKey);
       const amount = equipmentCalibration.amount;
-      equipmentSubtotalCents += amount;
+      if (resource.resourceKind === "subcontractor") subcontractorSubtotalCents += amount;
+      else equipmentSubtotalCents += amount;
       const equipmentLearning = `${durationFactor === 1 ? "" : ` × ${durationFactor.toFixed(3)} learned utilization`}${equipmentRateFactor === 1 ? "" : ` × ${equipmentRateFactor.toFixed(3)} learned unit cost`}`;
       lines.push({ id: `${scope.id}-equipment-${component.resourceKey}`, scopeItemId: scope.id, kind: resource.resourceKind, taskKey: assembly.taskKey, resourceKey: resource.resourceKey, label: resource.name, quantity: round(quantity), unit: resource.unit, unitCostCents: money(learnedEquipmentRate), amountCents: amount, formula: `${scope.quantity} ${scope.unit ?? assembly.unit} × ${component.quantityPerUnit} ${resource.unit}/${assembly.unit}${equipmentLearning}${equipmentCalibration.suffix}`, confidence: Math.max(40, confidence - 5), sourceType: "company_assumption", sourceDocumentId: scope.sourceDocumentId ?? undefined, sourcePage: scope.sourcePage ?? undefined, evidenceText: scope.evidenceText ?? undefined });
-      pushDemand(demand, resource, quantity, `${assembly.name} equipment demand`);
+      pushDemand(demand, resource, quantity, `${assembly.name} resource demand`);
     }
   }
 

@@ -1,8 +1,8 @@
-name: CanadaBuys daily ingestion
+name: Connected tender source ingestion
 
 on:
   schedule:
-    - cron: "15 7 * * *"
+    - cron: "15 */4 * * *"
   workflow_dispatch:
 
 jobs:
@@ -25,11 +25,11 @@ jobs:
         run: |
           if [[ -z "$DATABASE_URL" ]]; then
             echo "configured=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::CanadaBuys ingestion skipped because DATABASE_URL is required. CANADABUYS_TENDER_CSV_URL is optional and falls back to official dataset metadata."
+            echo "::warning::Tender-source ingestion skipped because DATABASE_URL is required. Connected sources remain visible as not scanned."
           else
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
-      - run: npm run ingest:canadabuys
+      - run: npm run ingest:tender-sources
         if: steps.config.outputs.configured == 'true'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}

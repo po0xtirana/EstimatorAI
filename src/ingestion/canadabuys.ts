@@ -3,7 +3,7 @@
 export type BilingualText = { en: string | null; fr: string | null };
 
 export type NormalizedTender = {
-  source: "canadabuys";
+  source: string;
   sourceRecordId: string;
   solicitationNumber: string | null;
   title: BilingualText;

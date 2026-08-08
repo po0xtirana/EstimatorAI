@@ -4,9 +4,12 @@ const tests = [
   "../src/ingestion/scope-extractor.test.ts",
   "../src/ingestion/canadabuys.test.ts",
   "../src/matching/engine.test.ts",
+  "../src/matching/relevance-learning.test.ts",
+  "../src/ingestion/tender-intelligence.test.ts",
   "../src/estimation/profile.test.ts",
   "../src/estimation/engine.test.ts",
   "../src/estimation/accuracy.test.ts",
+  "../src/estimation/trade-templates.test.ts",
   "../src/learning/estimator-workbook.test.ts",
   "../src/learning/hierarchical-model.test.ts",
   "../src/notifications/match-alert.test.ts"
